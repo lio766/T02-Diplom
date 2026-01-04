@@ -1,0 +1,20 @@
+# --- Eigene Umgebungsvariablen & Passwörter ---
+.env
+*.env
+
+# --- Backend (Node/Express) ---
+backend/node_modules/
+backend/npm-debug.log*
+
+# --- Frontend (Vue.js) ---
+# Hier den kleingeschriebenen Ordnernamen nutzen
+frontend/node_modules/
+frontend/dist/
+frontend/.vscode/
+
+# --- Docker & Datenbank ---
+# Verhindert, dass die lokalen DB-Daten in Git landen
+db_data/
+
+# --- Betriebssystem ---
+.DS_Store
