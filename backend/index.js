@@ -42,6 +42,134 @@ async function checkDbConnection() {
 	}
 }
 
+// Helper: resolve Raum_Id by room name (Bezeichnung)
+async function getRoomIdByName(name) {
+	const [rows] = await pool.query('SELECT Raum_Id AS id FROM Raum WHERE Bezeichnung = ? LIMIT 1', [name])
+	return rows.length ? rows[0].id : null
+}
+
+// Helper: optional resolve Benutzer by "Vorname Nachname" string
+async function findBenutzerByName(fullName) {
+	if (!fullName) return null
+	const parts = String(fullName).trim().split(/\s+/)
+	let vor = parts[0] || ''
+	let nach = parts.slice(1).join(' ') || ''
+	const [rows] = await pool.query('SELECT Benutzer_Id AS id FROM Benutzer WHERE Vorname = ? AND Nachname = ? LIMIT 1', [vor, nach])
+	if (rows.length) return rows[0].id
+	// Fallback: try Vorname-only match
+	if (vor && !nach) {
+		const [rows2] = await pool.query('SELECT Benutzer_Id AS id FROM Benutzer WHERE Vorname = ? LIMIT 1', [vor])
+		if (rows2.length) return rows2[0].id
+	}
+	return null
+}
+
+// Helper: check time conflict for a room
+async function hasConflict(raumId, startTs, endTs) {
+	const [rows] = await pool.query(
+		'SELECT COUNT(*) AS cnt FROM Buchungen WHERE Raum_Id = ? AND NOT (Endzeit <= ? OR Startzeit >= ?)',
+		[raumId, startTs, endTs]
+	)
+	return rows[0].cnt > 0
+}
+
+// GET /bookings -> list bookings with room and optional person name
+// List rooms
+app.get('/rooms', async (req, res) => {
+	try {
+		const [rows] = await pool.query('SELECT Raum_Id AS id, Bezeichnung AS name, Standort, Kapazitaet FROM Raum ORDER BY Bezeichnung ASC')
+		res.json(rows)
+	} catch (err) {
+		console.error('GET /rooms error:', err)
+		res.status(500).json({ error: 'Fehler beim Laden der Räume' })
+	}
+})
+
+app.get('/bookings', async (req, res) => {
+	try {
+		const [rows] = await pool.query(
+			`SELECT 
+				 b.Buchung_Id AS id,
+				 r.Bezeichnung AS room,
+				 DATE_FORMAT(b.Startzeit, '%Y-%m-%d') AS date,
+				 DATE_FORMAT(b.Startzeit, '%H:%i') AS start_time,
+				 DATE_FORMAT(b.Endzeit, '%H:%i') AS end_time,
+				 TRIM(CONCAT(COALESCE(u.Vorname,''), ' ', COALESCE(u.Nachname,''))) AS person
+			 FROM Buchungen b
+			 JOIN Raum r ON r.Raum_Id = b.Raum_Id
+			 LEFT JOIN Buchung_Benutzer bb ON bb.Buchung_Id = b.Buchung_Id
+			 LEFT JOIN Benutzer u ON u.Benutzer_Id = bb.Benutzer_Id
+			 ORDER BY b.Startzeit DESC`
+		)
+		const data = rows.map((r) => ({
+			id: r.id,
+			room: r.room,
+			date: r.date,
+			start_time: r.start_time,
+			end_time: r.end_time,
+			person: r.person || ''
+		}))
+		res.json(data)
+	} catch (err) {
+		console.error('GET /bookings error:', err)
+		res.status(500).json({ error: 'Fehler beim Laden der Buchungen' })
+	}
+})
+
+// POST /bookings -> create booking, optional link to Benutzer
+app.post('/bookings', async (req, res) => {
+	try {
+		const { room, room_id, date, start_time, end_time, person } = req.body || {}
+		if ((!room && !room_id) || !date || !start_time || !end_time) {
+			return res.status(400).json({ error: 'Felder (room oder room_id), date, start_time, end_time sind erforderlich' })
+		}
+		// Build MySQL DATETIME strings
+		const startTs = `${date} ${start_time}:00`
+		const endTs = `${date} ${end_time}:00`
+		if (endTs <= startTs) {
+			return res.status(400).json({ error: 'Endzeit muss nach der Startzeit liegen.' })
+		}
+
+		let raumId = room_id
+		if (!raumId) {
+			raumId = await getRoomIdByName(room)
+		}
+		if (!raumId) {
+			return res.status(404).json({ error: `Raum nicht gefunden` })
+		}
+
+		// Conflict check
+		if (await hasConflict(raumId, startTs, endTs)) {
+			return res.status(409).json({ error: 'Zeitfenster belegt' })
+		}
+
+		// Default values
+		const status = 'Geplant'
+		const prioritaet = 1
+
+		const [ins] = await pool.query(
+			'INSERT INTO Buchungen (Raum_Id, Startzeit, Endzeit, Status, Prioritaet) VALUES (?, ?, ?, ?, ?)',
+			[raumId, startTs, endTs, status, prioritaet]
+		)
+
+		// Optional person mapping
+		const benutzerId = await findBenutzerByName(person)
+		if (benutzerId) {
+			try {
+				await pool.query(
+					'INSERT INTO Buchung_Benutzer (Buchung_Id, Benutzer_Id) VALUES (?, ?)',
+					[ins.insertId, benutzerId]
+				)
+			} catch (_) {}
+		}
+
+		return res.status(201).json({ id: ins.insertId })
+	} catch (err) {
+		console.error('POST /bookings error:', err)
+		res.status(500).json({ error: 'Fehler beim Speichern der Buchung' })
+	}
+})
+
 // Resolve Mitarbeiter role id from existing roles table (capitalized: Rollen)
 async function getMitarbeiterRoleId() {
 	const [rows] = await pool.query('SELECT Rollen_Id AS id FROM Rollen WHERE Name = ? LIMIT 1', ['Mitarbeiter'])

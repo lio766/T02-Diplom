@@ -3,7 +3,8 @@ import { ref, onMounted } from 'vue'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
-const room = ref('Raum 101')
+const roomId = ref('')
+const rooms = ref([])
 const date = ref('')
 const start = ref('08:00')
 const end = ref('09:00')
@@ -28,8 +29,21 @@ async function loadBookings() {
   }
 }
 
+async function loadRooms() {
+  try {
+    const res = await fetch(`${API_BASE}/rooms`)
+    if (!res.ok) throw new Error('Fehler beim Laden der Räume')
+    rooms.value = await res.json()
+    if (rooms.value.length && !roomId.value) {
+      roomId.value = String(rooms.value[0].id)
+    }
+  } catch (e) {
+    // silently ignore for now
+  }
+}
+
 function validate() {
-  if (!room.value || !date.value || !start.value || !end.value || !person.value) return 'Bitte alle Felder ausfüllen.'
+  if (!roomId.value || !date.value || !start.value || !end.value || !person.value) return 'Bitte alle Felder ausfüllen.'
   if (end.value <= start.value) return 'Endzeit muss nach der Startzeit liegen.'
   return ''
 }
@@ -45,7 +59,7 @@ async function submit() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        room: room.value,
+        room_id: Number(roomId.value),
         date: date.value,
         start_time: start.value,
         end_time: end.value,
@@ -67,7 +81,7 @@ async function submit() {
   }
 }
 
-onMounted(loadBookings)
+onMounted(() => { loadRooms(); loadBookings() })
 </script>
 
 <template>
@@ -77,13 +91,9 @@ onMounted(loadBookings)
       <div class="grid">
         <label>
           Raum
-          <input v-model="room" list="rooms" />
-          <datalist id="rooms">
-            <option>Raum 101</option>
-            <option>Raum 201</option>
-            <option>Konferenz A</option>
-            <option>Konferenz B</option>
-          </datalist>
+          <select v-model="roomId">
+            <option v-for="r in rooms" :key="r.id" :value="String(r.id)">{{ r.name || r.Bezeichnung || r.bezeichnung }}</option>
+          </select>
         </label>
         <label>
           Datum
