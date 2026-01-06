@@ -9,6 +9,7 @@
       <div class="links">
         <RouterLink to="/" class="link">Start</RouterLink>
         <RouterLink to="/login" class="link">Login</RouterLink>
+        <RouterLink to="/booking" class="link">Buchen</RouterLink>
       </div>
     </nav>
     <RouterView />
