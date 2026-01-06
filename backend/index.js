@@ -42,20 +42,13 @@ async function checkDbConnection() {
 	}
 }
 
-// Resolve Mitarbeiter role id from existing roles table(s)
+// Resolve Mitarbeiter role id from existing roles table (capitalized: Rollen)
 async function getMitarbeiterRoleId() {
-	// Try German table/columns
-	try {
-		const [rows] = await pool.query('SELECT Rollen_Id AS id FROM rollen WHERE Name = ? LIMIT 1', ['Mitarbeiter'])
-		if (rows.length) return rows[0].id
-	} catch (_) {}
-	// Try English naming
-	try {
-		const [rows] = await pool.query('SELECT id FROM roles WHERE name = ? LIMIT 1', ['Mitarbeiter'])
-		if (rows.length) return rows[0].id
-	} catch (_) {}
-	// Fallback to 2 (as per provided screenshot)
-	return 2
+	const [rows] = await pool.query('SELECT Rollen_Id AS id FROM Rollen WHERE Name = ? LIMIT 1', ['Mitarbeiter'])
+	if (rows.length) return rows[0].id
+	// Fallback: Rolle anlegen, falls nicht vorhanden
+	const [ins] = await pool.query('INSERT INTO Rollen (Name, Prioritaet) VALUES (?, ?)', ['Mitarbeiter', 1])
+	return ins.insertId
 }
 
 // Login route: creates entry in `Benutzer` if not existing, default role = Mitarbeiter
@@ -66,12 +59,24 @@ app.post('/login', async (req, res) => {
 			return res.status(400).json({ error: 'E-Mail erforderlich' })
 		}
 
+		// Ensure Abteilung_Id is present; default to 'Allgemein'
+		let deptId = abteilung_id
+		if (deptId == null) {
+			const [deptRows] = await pool.query('SELECT Abteilung_Id AS id FROM Abteilungen WHERE Name = ? LIMIT 1', ['Allgemein'])
+			if (!deptRows.length) {
+				const [insertDept] = await pool.query('INSERT INTO Abteilungen (Name, Parent_Abt) VALUES (?, ?)', ['Allgemein', null])
+				deptId = insertDept.insertId
+			} else {
+				deptId = deptRows[0].id
+			}
+		}
+
 		const [existing] = await pool.query('SELECT Benutzer_Id, Rollen_Id, Abteilung_Id FROM Benutzer WHERE Email = ? LIMIT 1', [email])
 		if (!existing.length) {
 			const roleId = await getMitarbeiterRoleId()
 			const [result] = await pool.query(
 				'INSERT INTO Benutzer (Vorname, Nachname, Email, Rollen_Id, Abteilung_Id) VALUES (?, ?, ?, ?, ?)',
-				[vorname || '', nachname || '', email, roleId, abteilung_id ?? null]
+				[vorname || '', nachname || '', email, roleId, deptId]
 			)
 			return res.status(201).json({ benutzer_id: result.insertId, email, rollen_id: roleId, newUser: true })
 		}
