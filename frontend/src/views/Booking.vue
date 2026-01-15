@@ -1,5 +1,6 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
+import { getAuth, getToken } from '../lib/auth'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
@@ -8,7 +9,9 @@ const rooms = ref([])
 const date = ref('')
 const start = ref('08:00')
 const end = ref('09:00')
-const person = ref('')
+
+const session = ref(getAuth())
+const isLoggedIn = computed(() => Boolean(getToken()))
 
 const bookings = ref([])
 const loading = ref(false)
@@ -43,7 +46,8 @@ async function loadRooms() {
 }
 
 function validate() {
-  if (!roomId.value || !date.value || !start.value || !end.value || !person.value) return 'Bitte alle Felder ausfüllen.'
+  if (!isLoggedIn.value) return 'Bitte zuerst einloggen.'
+  if (!roomId.value || !date.value || !start.value || !end.value) return 'Bitte alle Felder ausfüllen.'
   if (end.value <= start.value) return 'Endzeit muss nach der Startzeit liegen.'
   return ''
 }
@@ -51,21 +55,28 @@ function validate() {
 async function submit() {
   error.value = ''
   success.value = ''
+  session.value = getAuth()
   const msg = validate()
   if (msg) { error.value = msg; return }
 
   try {
     const res = await fetch(`${API_BASE}/bookings`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${getToken()}`,
+      },
       body: JSON.stringify({
         room_id: Number(roomId.value),
         date: date.value,
         start_time: start.value,
         end_time: end.value,
-        person: person.value,
       })
     })
+    if (res.status === 401) {
+      const data = await res.json().catch(() => ({}))
+      throw new Error(data.error || 'Bitte zuerst einloggen')
+    }
     if (res.status === 409) {
       const data = await res.json()
       throw new Error(data.error || 'Zeitfenster belegt')
@@ -73,8 +84,6 @@ async function submit() {
     if (!res.ok) throw new Error('Fehler beim Speichern')
 
     success.value = 'Buchung gespeichert.'
-    // reset name only, keep other context
-    person.value = ''
     await loadBookings()
   } catch (e) {
     error.value = e.message
@@ -87,6 +96,17 @@ onMounted(() => { loadRooms(); loadBookings() })
 <template>
   <section class="booking">
     <h1>Raumbuchung</h1>
+
+    <div v-if="!isLoggedIn" class="card gate">
+      <p class="msg error">Zum Buchen musst du eingeloggt sein.</p>
+      <RouterLink to="/login" class="btn primary">Zum Login</RouterLink>
+    </div>
+
+    <div v-else class="card gate">
+      <p class="msg">Eingeloggt als <strong>{{ session?.user?.email || 'Benutzer' }}</strong></p>
+      <RouterLink to="/calendar" class="btn ghost">Zum Kalender</RouterLink>
+    </div>
+
     <form class="card" @submit.prevent="submit">
       <div class="grid">
         <label>
@@ -107,12 +127,8 @@ onMounted(() => { loadRooms(); loadBookings() })
           Ende
           <input v-model="end" type="time" />
         </label>
-        <label class="full">
-          Person
-          <input v-model="person" type="text" placeholder="Name" />
-        </label>
       </div>
-      <button type="submit" class="btn primary">Buchen</button>
+      <button type="submit" class="btn primary" :disabled="!isLoggedIn">Buchen</button>
       <p v-if="error" class="msg error">{{ error }}</p>
       <p v-if="success" class="msg success">{{ success }}</p>
     </form>
@@ -149,11 +165,14 @@ onMounted(() => { loadRooms(); loadBookings() })
 <style scoped>
 .booking { min-height: 70vh; color: #e5e7eb; background: #0f172a; padding: 2rem 1rem; display: grid; gap: 1.5rem; }
 .card { background: #111827; border: 1px solid #1f2937; border-radius: 0.75rem; padding: 1rem; display: grid; gap: 1rem; }
+.card.gate { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap; }
 .grid { display: grid; grid-template-columns: repeat(2, minmax(180px, 1fr)); gap: 0.75rem; }
 label { display: grid; gap: 0.35rem; font-size: 0.9rem; }
 label.full { grid-column: 1 / -1; }
 input { background: #0b1222; border: 1px solid #243146; color: #e5e7eb; padding: 0.6rem 0.7rem; border-radius: 0.5rem; }
+.btn.ghost { outline: 1px solid #334155; color: #e5e7eb; background: transparent; padding: 0.7rem 1rem; border-radius: 0.6rem; font-weight: 600; text-decoration: none; width: fit-content; display: inline-grid; place-items: center; }
 .btn.primary { background: #42b883; color: #0a0f1e; border: none; padding: 0.7rem 1rem; border-radius: 0.6rem; font-weight: 600; width: fit-content; }
+.btn.primary:disabled { opacity: 0.5; cursor: not-allowed; }
 .msg { margin: 0; font-size: 0.9rem; }
 .msg.error { color: #fca5a5; }
 .msg.success { color: #86efac; }
