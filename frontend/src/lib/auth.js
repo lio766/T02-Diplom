@@ -18,8 +18,13 @@ export function getToken() {
 
 export function setAuth(auth) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(auth))
+
+  // allow reactive UI updates without a full reload
+  try { window.dispatchEvent(new Event('auth-changed')) } catch {}
 }
 
 export function clearAuth() {
   localStorage.removeItem(STORAGE_KEY)
+
+  try { window.dispatchEvent(new Event('auth-changed')) } catch {}
 }

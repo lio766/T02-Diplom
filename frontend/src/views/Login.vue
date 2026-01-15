@@ -39,6 +39,9 @@ async function submit() {
         vorname: '',
         nachname: '',
         rollen_id: data.rollen_id,
+        rollen_name: data.rollen_name,
+        prioritaet: data.prioritaet,
+        is_admin: data.is_admin,
       },
     })
     session.value = getAuth()

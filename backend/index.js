@@ -8,7 +8,7 @@ const PORT = process.env.PORT || 3000
 // Simple CORS for development (Vite runs on 5173)
 app.use((req, res, next) => {
 	res.header('Access-Control-Allow-Origin', '*')
-	res.header('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
+	res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS')
 	res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
 	if (req.method === 'OPTIONS') return res.sendStatus(200)
 	next()
@@ -133,6 +133,54 @@ async function requireAuth(req, res, next) {
 	}
 }
 
+async function getUserRoleInfo(userId) {
+	const uid = Number(userId)
+	if (!Number.isFinite(uid)) return null
+	const [rows] = await pool.query(
+		`SELECT b.Benutzer_Id AS id,
+				b.Email AS email,
+				b.Rollen_Id AS rollen_id,
+				r.Name AS rollen_name,
+				r.Prioritaet AS prioritaet
+		 FROM Benutzer b
+		 LEFT JOIN Rollen r ON r.Rollen_Id = b.Rollen_Id
+		 WHERE b.Benutzer_Id = ?
+		 LIMIT 1`,
+		[uid]
+	)
+	return rows.length ? rows[0] : null
+}
+
+function isAdminRole(roleInfo) {
+	if (!roleInfo) return false
+	const rollenId = Number(roleInfo.rollen_id)
+	const rollenName = String(roleInfo.rollen_name || '')
+	const prioritaet = Number(roleInfo.prioritaet)
+	// Support both: explicit ID=1 requirement AND more robust checks by name/priority.
+	if (rollenId === 1) return true
+	if (rollenName.toLowerCase() === 'admin') return true
+	if (Number.isFinite(prioritaet) && prioritaet >= 100) return true
+	return false
+}
+
+async function requireAdmin(req, res, next) {
+	try {
+		const uid = req.user?.id
+		const roleInfo = await getUserRoleInfo(uid)
+		if (!roleInfo) return res.status(401).json({ error: 'Benutzer nicht gefunden' })
+		if (!isAdminRole(roleInfo)) return res.status(403).json({ error: 'Keine Admin-Berechtigung' })
+		req.user.role = {
+			rollen_id: roleInfo.rollen_id,
+			rollen_name: roleInfo.rollen_name,
+			prioritaet: roleInfo.prioritaet,
+		}
+		next()
+	} catch (err) {
+		console.error('Admin auth error:', err)
+		return res.status(500).json({ error: 'Berechtigungsprüfung fehlgeschlagen' })
+	}
+}
+
 async function initDb() {
 	pool = mysql.createPool(DB_CONFIG)
 }
@@ -174,6 +222,14 @@ async function hasConflict(raumId, startTs, endTs) {
 	const [rows] = await pool.query(
 		'SELECT COUNT(*) AS cnt FROM Buchungen WHERE Raum_Id = ? AND NOT (Endzeit <= ? OR Startzeit >= ?)',
 		[raumId, startTs, endTs]
+	)
+	return rows[0].cnt > 0
+}
+
+async function hasConflictExcludingBooking(raumId, bookingId, startTs, endTs) {
+	const [rows] = await pool.query(
+		'SELECT COUNT(*) AS cnt FROM Buchungen WHERE Raum_Id = ? AND Buchung_Id <> ? AND NOT (Endzeit <= ? OR Startzeit >= ?)',
+		[raumId, bookingId, startTs, endTs]
 	)
 	return rows[0].cnt > 0
 }
@@ -222,6 +278,152 @@ app.get('/rooms', async (req, res) => {
 		res.status(500).json({ error: 'Fehler beim Laden der Räume' })
 	}
 })
+
+// Current user info (server-truth, incl. role)
+app.get('/me', requireAuth, async (req, res) => {
+	try {
+		const info = await getUserRoleInfo(req.user.id)
+		if (!info) return res.status(404).json({ error: 'Benutzer nicht gefunden' })
+		return res.json({
+			benutzer_id: info.id,
+			email: info.email,
+			rollen_id: info.rollen_id,
+			rollen_name: info.rollen_name,
+			prioritaet: info.prioritaet,
+			is_admin: isAdminRole(info),
+		})
+	} catch (err) {
+		console.error('GET /me error:', err)
+		return res.status(500).json({ error: 'Fehler beim Laden des Profils' })
+	}
+})
+
+app.get('/api/me', requireAuth, async (req, res) => {
+	try {
+		const info = await getUserRoleInfo(req.user.id)
+		if (!info) return res.status(404).json({ error: 'Benutzer nicht gefunden' })
+		return res.json({
+			benutzer_id: info.id,
+			email: info.email,
+			rollen_id: info.rollen_id,
+			rollen_name: info.rollen_name,
+			prioritaet: info.prioritaet,
+			is_admin: isAdminRole(info),
+		})
+	} catch (err) {
+		console.error('GET /api/me error:', err)
+		return res.status(500).json({ error: 'Fehler beim Laden des Profils' })
+	}
+})
+
+async function createRoomHandler(req, res) {
+	try {
+		const { bezeichnung, standort, kapazitaet } = req.body || {}
+		const bz = String(bezeichnung || '').trim()
+		const st = String(standort || '').trim()
+		const kap = Number(kapazitaet)
+		if (!bz) return res.status(400).json({ error: 'Bezeichnung erforderlich' })
+		if (!st) return res.status(400).json({ error: 'Standort erforderlich' })
+		if (!Number.isFinite(kap) || kap <= 0) return res.status(400).json({ error: 'Kapazitaet muss > 0 sein' })
+
+		const [result] = await pool.query(
+			'INSERT INTO Raum (Bezeichnung, Standort, Kapazitaet) VALUES (?, ?, ?)',
+			[bz, st, Math.trunc(kap)]
+		)
+		return res.status(201).json({ id: result.insertId })
+	} catch (err) {
+		console.error('POST admin room error:', err)
+		return res.status(500).json({ error: 'Fehler beim Anlegen des Raums' })
+	}
+}
+
+// Admin: create new room
+app.post('/admin/rooms', requireAuth, requireAdmin, createRoomHandler)
+app.post('/api/admin/rooms', requireAuth, requireAdmin, createRoomHandler)
+
+async function updateBookingHandler(req, res) {
+	try {
+		const bookingId = Number(req.params.id)
+		if (!Number.isFinite(bookingId)) return res.status(400).json({ error: 'Ungültige Buchungs-ID' })
+
+		const { room_id, date, start_time, end_time } = req.body || {}
+		const participantEmails = parseParticipantsFromBody(req.body)
+
+		if (!room_id || !date || !start_time || !end_time) {
+			return res.status(400).json({ error: 'Felder room_id, date, start_time, end_time sind erforderlich' })
+		}
+
+		const raumId = Number(room_id)
+		if (!Number.isFinite(raumId)) return res.status(400).json({ error: 'Ungültige room_id' })
+
+		const startTs = `${String(date).trim()} ${String(start_time).trim()}:00`
+		const endTs = `${String(date).trim()} ${String(end_time).trim()}:00`
+		if (endTs <= startTs) return res.status(400).json({ error: 'Endzeit muss nach der Startzeit liegen.' })
+
+		// booking exists?
+		const [exists] = await pool.query('SELECT Buchung_Id AS id FROM Buchungen WHERE Buchung_Id = ? LIMIT 1', [bookingId])
+		if (!exists.length) return res.status(404).json({ error: 'Buchung nicht gefunden' })
+
+		// room exists?
+		const [roomRows] = await pool.query('SELECT Raum_Id AS id FROM Raum WHERE Raum_Id = ? LIMIT 1', [raumId])
+		if (!roomRows.length) return res.status(404).json({ error: 'Raum nicht gefunden' })
+
+		if (await hasConflictExcludingBooking(raumId, bookingId, startTs, endTs)) {
+			return res.status(409).json({ error: 'Zeitfenster belegt' })
+		}
+
+		const conn = await pool.getConnection()
+		try {
+			await conn.beginTransaction()
+			await conn.query(
+				'UPDATE Buchungen SET Raum_Id = ?, Startzeit = ?, Endzeit = ? WHERE Buchung_Id = ?',
+				[raumId, startTs, endTs, bookingId]
+			)
+
+			// participants
+			await conn.query('DELETE FROM Buchung_Benutzer WHERE Buchung_Id = ?', [bookingId])
+			const { users, unknown } = await resolveUserIdsByEmails(participantEmails)
+			if (unknown.length) {
+				await conn.rollback()
+				return res.status(400).json({ error: `Unbekannte Teilnehmer: ${unknown.join(', ')}`, unknown })
+			}
+
+			const userIds = Array.from(new Set(users.map((u) => u.id).filter((x) => Number.isFinite(Number(x)))))
+			for (const uid of userIds) {
+				try {
+					await conn.query('INSERT INTO Buchung_Benutzer (Buchung_Id, Benutzer_Id) VALUES (?, ?)', [bookingId, uid])
+				} catch (_) {}
+			}
+
+			await conn.commit()
+			return res.json({ id: bookingId })
+		} finally {
+			conn.release()
+		}
+	} catch (err) {
+		console.error('PUT booking error:', err)
+		return res.status(500).json({ error: 'Fehler beim Aktualisieren der Buchung' })
+	}
+}
+
+async function deleteBookingHandler(req, res) {
+	try {
+		const bookingId = Number(req.params.id)
+		if (!Number.isFinite(bookingId)) return res.status(400).json({ error: 'Ungültige Buchungs-ID' })
+		const [result] = await pool.query('DELETE FROM Buchungen WHERE Buchung_Id = ?', [bookingId])
+		if (!result.affectedRows) return res.status(404).json({ error: 'Buchung nicht gefunden' })
+		return res.status(204).send()
+	} catch (err) {
+		console.error('DELETE booking error:', err)
+		return res.status(500).json({ error: 'Fehler beim Löschen der Buchung' })
+	}
+}
+
+// Admin: update/delete bookings
+app.put('/bookings/:id', requireAuth, requireAdmin, updateBookingHandler)
+app.put('/api/bookings/:id', requireAuth, requireAdmin, updateBookingHandler)
+app.delete('/bookings/:id', requireAuth, requireAdmin, deleteBookingHandler)
+app.delete('/api/bookings/:id', requireAuth, requireAdmin, deleteBookingHandler)
 
 app.get('/api/rooms', async (req, res) => {
 	try {
@@ -600,7 +802,16 @@ app.post('/register', async (req, res) => {
 		)
 
 		const token = signToken({ uid: result.insertId, iat: Date.now(), exp: Date.now() + (7 * 24 * 60 * 60 * 1000) })
-		return res.status(201).json({ benutzer_id: result.insertId, email, rollen_id: roleId, token })
+		const info = await getUserRoleInfo(result.insertId)
+		return res.status(201).json({
+			benutzer_id: result.insertId,
+			email,
+			rollen_id: roleId,
+			rollen_name: info?.rollen_name || null,
+			prioritaet: info?.prioritaet ?? null,
+			is_admin: isAdminRole(info),
+			token,
+		})
 	} catch (err) {
 		console.error('POST /register error:', err)
 		res.status(500).json({ error: 'Registrierung fehlgeschlagen' })
@@ -628,7 +839,16 @@ app.post('/api/register', async (req, res) => {
 		)
 
 		const token = signToken({ uid: result.insertId, iat: Date.now(), exp: Date.now() + (7 * 24 * 60 * 60 * 1000) })
-		return res.status(201).json({ benutzer_id: result.insertId, email, rollen_id: roleId, token })
+		const info = await getUserRoleInfo(result.insertId)
+		return res.status(201).json({
+			benutzer_id: result.insertId,
+			email,
+			rollen_id: roleId,
+			rollen_name: info?.rollen_name || null,
+			prioritaet: info?.prioritaet ?? null,
+			is_admin: isAdminRole(info),
+			token,
+		})
 	} catch (err) {
 		console.error('POST /api/register error:', err)
 		res.status(500).json({ error: 'Registrierung fehlgeschlagen' })
@@ -656,7 +876,16 @@ app.post('/login', async (req, res) => {
 		}
 
 		const token = signToken({ uid: user.Benutzer_Id, iat: Date.now(), exp: Date.now() + (7 * 24 * 60 * 60 * 1000) })
-		return res.json({ benutzer_id: user.Benutzer_Id, email, rollen_id: user.Rollen_Id, token })
+		const info = await getUserRoleInfo(user.Benutzer_Id)
+		return res.json({
+			benutzer_id: user.Benutzer_Id,
+			email,
+			rollen_id: user.Rollen_Id,
+			rollen_name: info?.rollen_name || null,
+			prioritaet: info?.prioritaet ?? null,
+			is_admin: isAdminRole(info),
+			token,
+		})
 	} catch (err) {
 		console.error('POST /login error:', err)
 		res.status(500).json({ error: 'Login fehlgeschlagen' })
@@ -677,7 +906,16 @@ app.post('/api/login', async (req, res) => {
 		}
 
 		const token = signToken({ uid: user.Benutzer_Id, iat: Date.now(), exp: Date.now() + (7 * 24 * 60 * 60 * 1000) })
-		return res.json({ benutzer_id: user.Benutzer_Id, email, rollen_id: user.Rollen_Id, token })
+		const info = await getUserRoleInfo(user.Benutzer_Id)
+		return res.json({
+			benutzer_id: user.Benutzer_Id,
+			email,
+			rollen_id: user.Rollen_Id,
+			rollen_name: info?.rollen_name || null,
+			prioritaet: info?.prioritaet ?? null,
+			is_admin: isAdminRole(info),
+			token,
+		})
 	} catch (err) {
 		console.error('POST /api/login error:', err)
 		res.status(500).json({ error: 'Login fehlgeschlagen' })

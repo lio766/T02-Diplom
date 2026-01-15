@@ -59,6 +59,9 @@ async function submit() {
         vorname: vorname.value,
         nachname: nachname.value,
         rollen_id: data.rollen_id,
+        rollen_name: data.rollen_name,
+        prioritaet: data.prioritaet,
+        is_admin: data.is_admin,
       },
     })
 

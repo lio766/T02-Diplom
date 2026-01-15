@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { getAuth, getToken } from '../lib/auth'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
@@ -64,6 +65,26 @@ const bookings = ref([])
 
 const selectedBooking = ref(null)
 const showDetails = ref(false)
+
+const session = ref(getAuth())
+const isLoggedIn = computed(() => Boolean(getToken()))
+const isAdmin = computed(() => {
+  const u = session.value?.user
+  return Boolean(u?.is_admin)
+    || String(u?.rollen_name || '').toLowerCase() === 'admin'
+    || Number(u?.rollen_id) === 1
+})
+
+const editRoomId = ref('')
+const editDate = ref('')
+const editStart = ref('')
+const editEnd = ref('')
+const editParticipants = ref('')
+
+const saving = ref(false)
+const deleting = ref(false)
+const detailMsg = ref('')
+const detailErr = ref('')
 
 const todayIso = computed(() => toIsoDate(new Date()))
 
@@ -185,13 +206,137 @@ function bookingParticipantsLabel(b) {
 }
 
 function openDetails(b) {
+  session.value = getAuth()
   selectedBooking.value = b
   showDetails.value = true
+
+  // prefill edit fields (admins)
+  editRoomId.value = String(b?.room_id ?? '')
+  editDate.value = String(b?.date ?? '')
+  editStart.value = String(b?.start_time ?? '')
+  editEnd.value = String(b?.end_time ?? '')
+  const emails = Array.isArray(b?.participants)
+    ? b.participants.map((p) => String(p?.email || '').trim()).filter(Boolean)
+    : []
+  editParticipants.value = emails.join(', ')
+  detailMsg.value = ''
+  detailErr.value = ''
 }
 
 function closeDetails() {
   showDetails.value = false
   selectedBooking.value = null
+	detailMsg.value = ''
+	detailErr.value = ''
+}
+
+function parseEmails(text) {
+  return String(text || '')
+    .split(/[,;\n\r\t]+/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+}
+
+async function saveBooking() {
+  detailMsg.value = ''
+  detailErr.value = ''
+  session.value = getAuth()
+
+  if (!selectedBooking.value?.id) { detailErr.value = 'Keine Buchung ausgewählt.'; return }
+  if (!isLoggedIn.value) { detailErr.value = 'Bitte zuerst einloggen.'; return }
+  if (!isAdmin.value) { detailErr.value = 'Keine Admin-Berechtigung.'; return }
+  if (!editRoomId.value || !editDate.value || !editStart.value || !editEnd.value) {
+    detailErr.value = 'Bitte alle Felder ausfüllen.'
+    return
+  }
+  if (editEnd.value <= editStart.value) {
+    detailErr.value = 'Endzeit muss nach der Startzeit liegen.'
+    return
+  }
+
+  saving.value = true
+  try {
+    const res = await fetch(`${API_BASE}/bookings/${selectedBooking.value.id}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${getToken()}`,
+      },
+      body: JSON.stringify({
+        room_id: Number(editRoomId.value),
+        date: editDate.value,
+        start_time: editStart.value,
+        end_time: editEnd.value,
+        participant_emails: parseEmails(editParticipants.value),
+      })
+    })
+
+    if (res.status === 204) {
+      // shouldn't happen for PUT, but handle gracefully
+      detailMsg.value = 'Gespeichert.'
+      await loadBookings()
+      closeDetails()
+      return
+    }
+
+    const data = await res.json().catch(() => ({}))
+    if (res.status === 401) throw new Error(data.error || 'Bitte zuerst einloggen')
+    if (res.status === 403) throw new Error(data.error || 'Keine Admin-Berechtigung')
+    if (res.status === 409) throw new Error(data.error || 'Zeitfenster belegt')
+    if (!res.ok) throw new Error(data.error || 'Fehler beim Speichern')
+
+    detailMsg.value = 'Änderungen gespeichert.'
+    await loadBookings()
+    closeDetails()
+  } catch (e) {
+    detailErr.value = e.message
+  } finally {
+    saving.value = false
+  }
+}
+
+async function deleteBooking() {
+  detailMsg.value = ''
+  detailErr.value = ''
+  session.value = getAuth()
+
+  if (!selectedBooking.value?.id) { detailErr.value = 'Keine Buchung ausgewählt.'; return }
+  if (!isLoggedIn.value) { detailErr.value = 'Bitte zuerst einloggen.'; return }
+  if (!isAdmin.value) { detailErr.value = 'Keine Admin-Berechtigung.'; return }
+
+  const ok = window.confirm('Buchung wirklich löschen?')
+  if (!ok) return
+
+  deleting.value = true
+  try {
+    const res = await fetch(`${API_BASE}/bookings/${selectedBooking.value.id}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${getToken()}` },
+    })
+    if (res.status === 401) {
+      const data = await res.json().catch(() => ({}))
+      throw new Error(data.error || 'Bitte zuerst einloggen')
+    }
+    if (res.status === 403) {
+      const data = await res.json().catch(() => ({}))
+      throw new Error(data.error || 'Keine Admin-Berechtigung')
+    }
+    if (res.status === 404) {
+      const data = await res.json().catch(() => ({}))
+      throw new Error(data.error || 'Buchung nicht gefunden')
+    }
+    if (res.status !== 204 && !res.ok) {
+      const data = await res.json().catch(() => ({}))
+      throw new Error(data.error || 'Fehler beim Löschen')
+    }
+
+    await loadBookings()
+    closeDetails()
+  } catch (e) {
+    detailErr.value = e.message
+  } finally {
+    deleting.value = false
+  }
 }
 
 function weekRangeQuery() {
@@ -371,18 +516,61 @@ onMounted(async () => {
         </div>
 
         <div v-if="selectedBooking" class="modalBody">
-          <div class="detailRow">
-            <span class="k">Raum</span>
-            <span class="v">{{ selectedBooking.room }}</span>
-          </div>
-          <div class="detailRow">
-            <span class="k">Datum</span>
-            <span class="v">{{ selectedBooking.date }}</span>
-          </div>
-          <div class="detailRow">
-            <span class="k">Zeitraum</span>
-            <span class="v">{{ selectedBooking.start_time }} – {{ selectedBooking.end_time }}</span>
-          </div>
+          <template v-if="isAdmin">
+            <div class="detailRow">
+              <span class="k">Raum</span>
+              <span class="v">
+                <select v-model="editRoomId" class="inp">
+                  <option v-for="r in rooms" :key="r.id" :value="String(r.id)">
+                    {{ r.name || r.Bezeichnung || r.bezeichnung }}
+                  </option>
+                </select>
+              </span>
+            </div>
+            <div class="detailRow">
+              <span class="k">Datum</span>
+              <span class="v"><input v-model="editDate" class="inp" type="date" /></span>
+            </div>
+            <div class="detailRow">
+              <span class="k">Start</span>
+              <span class="v"><input v-model="editStart" class="inp" type="time" /></span>
+            </div>
+            <div class="detailRow">
+              <span class="k">Ende</span>
+              <span class="v"><input v-model="editEnd" class="inp" type="time" /></span>
+            </div>
+            <div class="detailRow top">
+              <span class="k">Teilnehmer (E-Mails)</span>
+              <span class="v">
+                <textarea v-model="editParticipants" class="inp" rows="3" placeholder="mail1@example.com, mail2@example.com"></textarea>
+                <div class="hint">Komma/Zeilenumbruch getrennt. Unbekannte E-Mails werden abgelehnt.</div>
+              </span>
+            </div>
+
+            <div class="actions">
+              <button class="btn primary" type="button" :disabled="saving || deleting" @click="saveBooking">
+                {{ saving ? 'Speichere…' : 'Speichern' }}
+              </button>
+              <button class="btn danger" type="button" :disabled="saving || deleting" @click="deleteBooking">
+                {{ deleting ? 'Lösche…' : 'Löschen' }}
+              </button>
+            </div>
+          </template>
+
+          <template v-else>
+            <div class="detailRow">
+              <span class="k">Raum</span>
+              <span class="v">{{ selectedBooking.room }}</span>
+            </div>
+            <div class="detailRow">
+              <span class="k">Datum</span>
+              <span class="v">{{ selectedBooking.date }}</span>
+            </div>
+            <div class="detailRow">
+              <span class="k">Zeitraum</span>
+              <span class="v">{{ selectedBooking.start_time }} – {{ selectedBooking.end_time }}</span>
+            </div>
+          </template>
 
           <div class="detailRow top">
             <span class="k">Eingetragene Benutzer</span>
@@ -399,6 +587,9 @@ onMounted(async () => {
               </template>
             </span>
           </div>
+
+          <p v-if="detailMsg" class="msg success">{{ detailMsg }}</p>
+          <p v-if="detailErr" class="msg error">{{ detailErr }}</p>
         </div>
       </div>
     </div>
@@ -422,6 +613,7 @@ select { min-width: 260px; background: #0b1222; border: 1px solid #243146; color
 
 .msg { margin: 0; font-size: 0.95rem; }
 .msg.error { color: #fca5a5; }
+.msg.success { color: #86efac; }
 
 .calendarCard { background: #111827; border: 1px solid #1f2937; border-radius: 0.9rem; overflow: hidden; }
 .headerRow { display: grid; grid-template-columns: 72px repeat(7, 1fr); background: #0b1222; border-bottom: 1px solid #1f2937; }
@@ -465,6 +657,12 @@ select { min-width: 260px; background: #0b1222; border: 1px solid #243146; color
 .detailRow.top { align-items: start; }
 .k { color: #94a3b8; font-size: 0.9rem; }
 .v { color: #e5e7eb; }
+.inp { width: 100%; background: #0b1222; border: 1px solid #243146; color: #e5e7eb; padding: 0.55rem 0.65rem; border-radius: 0.5rem; }
+textarea.inp { resize: vertical; }
+.hint { margin-top: 0.35rem; color: #94a3b8; font-size: 0.8rem; }
+.actions { display: flex; gap: 0.5rem; justify-content: flex-end; flex-wrap: wrap; }
+.btn.primary { background: #42b883; color: #0a0f1e; border: none; font-weight: 700; }
+.btn.danger { background: #ef4444; color: #0a0f1e; border: none; font-weight: 800; }
 .participants { margin: 0.25rem 0 0; padding-left: 1.1rem; }
 .participants li { margin: 0.1rem 0; }
 </style>
