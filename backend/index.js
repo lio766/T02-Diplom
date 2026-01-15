@@ -178,6 +178,39 @@ async function hasConflict(raumId, startTs, endTs) {
 	return rows[0].cnt > 0
 }
 
+async function resolveUserIdsByEmails(emails) {
+	const cleaned = Array.from(new Set(
+		(emails || [])
+			.map((e) => String(e || '').trim())
+			.filter(Boolean)
+			.map((e) => e.toLowerCase())
+	))
+	if (!cleaned.length) return { users: [], unknown: [] }
+
+	const placeholders = cleaned.map(() => '?').join(',')
+	const [rows] = await pool.query(
+		`SELECT Benutzer_Id AS id, Email AS email, Vorname AS vorname, Nachname AS nachname
+		 FROM Benutzer
+		 WHERE LOWER(Email) IN (${placeholders})`,
+		cleaned
+	)
+	const byEmail = new Map(rows.map((u) => [String(u.email || '').toLowerCase(), u]))
+	const unknown = cleaned.filter((e) => !byEmail.has(e))
+	const users = cleaned.map((e) => byEmail.get(e)).filter(Boolean)
+	return { users, unknown }
+}
+
+function parseParticipantsFromBody(body) {
+	const b = body || {}
+	const raw = b.participant_emails ?? b.participants_emails ?? b.participantsEmails ?? b.participants
+	if (raw == null) return []
+	if (Array.isArray(raw)) return raw
+	return String(raw)
+		.split(/[,;\n\r\t]+/)
+		.map((s) => s.trim())
+		.filter(Boolean)
+}
+
 // GET /bookings -> list bookings with room and optional person name
 // List rooms
 app.get('/rooms', async (req, res) => {
@@ -199,6 +232,44 @@ app.get('/api/rooms', async (req, res) => {
 		res.status(500).json({ error: 'Fehler beim Laden der Räume' })
 	}
 })
+
+async function searchUsersHandler(req, res) {
+	try {
+		const q = req.query.q != null ? String(req.query.q).trim().toLowerCase() : ''
+		const limit = Math.min(50, Math.max(1, Number(req.query.limit || 15)))
+
+		let sql = `SELECT Benutzer_Id AS id, Email AS email, Vorname AS vorname, Nachname AS nachname
+			FROM Benutzer`
+		const params = []
+		if (q) {
+			const like = `%${q}%`
+			sql += ` WHERE LOWER(Email) LIKE ?
+				OR LOWER(Vorname) LIKE ?
+				OR LOWER(Nachname) LIKE ?
+				OR LOWER(CONCAT(Vorname, ' ', Nachname)) LIKE ?`
+			params.push(like, like, like, like)
+		}
+		sql += ` ORDER BY Nachname ASC, Vorname ASC LIMIT ?`
+		params.push(limit)
+
+		const [rows] = await pool.query(sql, params)
+		const data = rows.map((u) => ({
+			id: u.id,
+			email: u.email,
+			name: `${u.vorname || ''} ${u.nachname || ''}`.trim(),
+			vorname: u.vorname,
+			nachname: u.nachname,
+		}))
+		return res.json(data)
+	} catch (err) {
+		console.error('GET /users error:', err)
+		return res.status(500).json({ error: 'Fehler beim Laden der Benutzer' })
+	}
+}
+
+// Users search (for booking participants). Auth required.
+app.get('/users', requireAuth, searchUsersHandler)
+app.get('/api/users', requireAuth, searchUsersHandler)
 
 app.get('/bookings', async (req, res) => {
 	try {
@@ -238,24 +309,45 @@ app.get('/bookings', async (req, res) => {
 				 DATE_FORMAT(b.Startzeit, '%Y-%m-%d') AS date,
 				 DATE_FORMAT(b.Startzeit, '%H:%i') AS start_time,
 				 DATE_FORMAT(b.Endzeit, '%H:%i') AS end_time,
-				 TRIM(CONCAT(COALESCE(u.Vorname,''), ' ', COALESCE(u.Nachname,''))) AS person
+				 GROUP_CONCAT(DISTINCT CONCAT(
+					 u.Benutzer_Id, '::', COALESCE(u.Email,''), '::',
+					 TRIM(CONCAT(COALESCE(u.Vorname,''), ' ', COALESCE(u.Nachname,'')))
+				 ) SEPARATOR '||') AS participants_raw
 			 FROM Buchungen b
 			 JOIN Raum r ON r.Raum_Id = b.Raum_Id
 			 LEFT JOIN Buchung_Benutzer bb ON bb.Buchung_Id = b.Buchung_Id
 			 LEFT JOIN Benutzer u ON u.Benutzer_Id = bb.Benutzer_Id
 			 ${whereSql}
+			 GROUP BY b.Buchung_Id
 			 ORDER BY b.Startzeit DESC`,
 			params
 		)
-		const data = rows.map((r) => ({
-			id: r.id,
-			room_id: r.room_id,
-			room: r.room,
-			date: r.date,
-			start_time: r.start_time,
-			end_time: r.end_time,
-			person: r.person || ''
-		}))
+		const data = rows.map((r) => {
+			const parts = String(r.participants_raw || '')
+				.split('||')
+				.map((x) => x.trim())
+				.filter(Boolean)
+				.map((x) => {
+					const [idStr, email, name] = x.split('::')
+					const id = Number(idStr)
+					return {
+						id: Number.isFinite(id) ? id : null,
+						email: email || '',
+						name: (name || '').trim(),
+					}
+				})
+				.filter((p) => p.id != null)
+			return {
+				id: r.id,
+				room_id: r.room_id,
+				room: r.room,
+				date: r.date,
+				start_time: r.start_time,
+				end_time: r.end_time,
+				participants: parts,
+				person: parts.map((p) => p.name || p.email).filter(Boolean).join(', '),
+			}
+		})
 		res.json(data)
 	} catch (err) {
 		console.error('GET /bookings error:', err)
@@ -301,24 +393,45 @@ app.get('/api/bookings', async (req, res) => {
 				 DATE_FORMAT(b.Startzeit, '%Y-%m-%d') AS date,
 				 DATE_FORMAT(b.Startzeit, '%H:%i') AS start_time,
 				 DATE_FORMAT(b.Endzeit, '%H:%i') AS end_time,
-				 TRIM(CONCAT(COALESCE(u.Vorname,''), ' ', COALESCE(u.Nachname,''))) AS person
+				 GROUP_CONCAT(DISTINCT CONCAT(
+					 u.Benutzer_Id, '::', COALESCE(u.Email,''), '::',
+					 TRIM(CONCAT(COALESCE(u.Vorname,''), ' ', COALESCE(u.Nachname,'')))
+				 ) SEPARATOR '||') AS participants_raw
 			 FROM Buchungen b
 			 JOIN Raum r ON r.Raum_Id = b.Raum_Id
 			 LEFT JOIN Buchung_Benutzer bb ON bb.Buchung_Id = b.Buchung_Id
 			 LEFT JOIN Benutzer u ON u.Benutzer_Id = bb.Benutzer_Id
 			 ${whereSql}
+			 GROUP BY b.Buchung_Id
 			 ORDER BY b.Startzeit DESC`,
 			params
 		)
-		const data = rows.map((r) => ({
-			id: r.id,
-			room_id: r.room_id,
-			room: r.room,
-			date: r.date,
-			start_time: r.start_time,
-			end_time: r.end_time,
-			person: r.person || ''
-		}))
+		const data = rows.map((r) => {
+			const parts = String(r.participants_raw || '')
+				.split('||')
+				.map((x) => x.trim())
+				.filter(Boolean)
+				.map((x) => {
+					const [idStr, email, name] = x.split('::')
+					const id = Number(idStr)
+					return {
+						id: Number.isFinite(id) ? id : null,
+						email: email || '',
+						name: (name || '').trim(),
+					}
+				})
+				.filter((p) => p.id != null)
+			return {
+				id: r.id,
+				room_id: r.room_id,
+				room: r.room,
+				date: r.date,
+				start_time: r.start_time,
+				end_time: r.end_time,
+				participants: parts,
+				person: parts.map((p) => p.name || p.email).filter(Boolean).join(', '),
+			}
+		})
 		res.json(data)
 	} catch (err) {
 		console.error('GET /api/bookings error:', err)
@@ -329,8 +442,9 @@ app.get('/api/bookings', async (req, res) => {
 // POST /bookings -> create booking, optional link to Benutzer
 app.post('/bookings', requireAuth, async (req, res) => {
 	try {
-		const { room, room_id, date, start_time, end_time, person } = req.body || {}
+		const { room, room_id, date, start_time, end_time } = req.body || {}
 		const authUserId = req.user.id
+		const participantEmails = parseParticipantsFromBody(req.body)
 
 		if ((!room && !room_id) || !date || !start_time || !end_time) {
 			return res.status(400).json({ error: 'Felder (room oder room_id), date, start_time, end_time sind erforderlich' })
@@ -359,22 +473,33 @@ app.post('/bookings', requireAuth, async (req, res) => {
 		const status = 'Geplant'
 		const prioritaet = 1
 
-		const [ins] = await pool.query(
-			'INSERT INTO Buchungen (Raum_Id, Startzeit, Endzeit, Status, Prioritaet) VALUES (?, ?, ?, ?, ?)',
-			[raumId, startTs, endTs, status, prioritaet]
-		)
-
-		// Always map booking to authenticated user
+		const conn = await pool.getConnection()
 		try {
-			await pool.query(
-				'INSERT INTO Buchung_Benutzer (Buchung_Id, Benutzer_Id) VALUES (?, ?)',
-				[ins.insertId, authUserId]
+			await conn.beginTransaction()
+			const [ins] = await conn.query(
+				'INSERT INTO Buchungen (Raum_Id, Startzeit, Endzeit, Status, Prioritaet) VALUES (?, ?, ?, ?, ?)',
+				[raumId, startTs, endTs, status, prioritaet]
 			)
-		} catch (_) {
-			// ignore duplicate or constraint errors
-		}
+			const bookingId = ins.insertId
 
-		return res.status(201).json({ id: ins.insertId })
+			const { users, unknown } = await resolveUserIdsByEmails(participantEmails)
+			if (unknown.length) {
+				await conn.rollback()
+				return res.status(400).json({ error: `Unbekannte Teilnehmer: ${unknown.join(', ')}`, unknown })
+			}
+
+			const userIds = Array.from(new Set([authUserId, ...users.map((u) => u.id)].filter((x) => Number.isFinite(Number(x)))))
+			for (const uid of userIds) {
+				try {
+					await conn.query('INSERT INTO Buchung_Benutzer (Buchung_Id, Benutzer_Id) VALUES (?, ?)', [bookingId, uid])
+				} catch (_) {}
+			}
+
+			await conn.commit()
+			return res.status(201).json({ id: bookingId })
+		} finally {
+			conn.release()
+		}
 	} catch (err) {
 		console.error('POST /bookings error:', err)
 		res.status(500).json({ error: 'Fehler beim Speichern der Buchung' })
@@ -383,8 +508,9 @@ app.post('/bookings', requireAuth, async (req, res) => {
 
 app.post('/api/bookings', requireAuth, async (req, res) => {
 	try {
-		const { room, room_id, date, start_time, end_time, person } = req.body || {}
+		const { room, room_id, date, start_time, end_time } = req.body || {}
 		const authUserId = req.user.id
+		const participantEmails = parseParticipantsFromBody(req.body)
 
 		if ((!room && !room_id) || !date || !start_time || !end_time) {
 			return res.status(400).json({ error: 'Felder (room oder room_id), date, start_time, end_time sind erforderlich' })
@@ -409,19 +535,34 @@ app.post('/api/bookings', requireAuth, async (req, res) => {
 
 		const status = 'Geplant'
 		const prioritaet = 1
-		const [ins] = await pool.query(
-			'INSERT INTO Buchungen (Raum_Id, Startzeit, Endzeit, Status, Prioritaet) VALUES (?, ?, ?, ?, ?)',
-			[raumId, startTs, endTs, status, prioritaet]
-		)
 
+		const conn = await pool.getConnection()
 		try {
-			await pool.query(
-				'INSERT INTO Buchung_Benutzer (Buchung_Id, Benutzer_Id) VALUES (?, ?)',
-				[ins.insertId, authUserId]
+			await conn.beginTransaction()
+			const [ins] = await conn.query(
+				'INSERT INTO Buchungen (Raum_Id, Startzeit, Endzeit, Status, Prioritaet) VALUES (?, ?, ?, ?, ?)',
+				[raumId, startTs, endTs, status, prioritaet]
 			)
-		} catch (_) {}
+			const bookingId = ins.insertId
 
-		return res.status(201).json({ id: ins.insertId })
+			const { users, unknown } = await resolveUserIdsByEmails(participantEmails)
+			if (unknown.length) {
+				await conn.rollback()
+				return res.status(400).json({ error: `Unbekannte Teilnehmer: ${unknown.join(', ')}`, unknown })
+			}
+
+			const userIds = Array.from(new Set([authUserId, ...users.map((u) => u.id)].filter((x) => Number.isFinite(Number(x)))))
+			for (const uid of userIds) {
+				try {
+					await conn.query('INSERT INTO Buchung_Benutzer (Buchung_Id, Benutzer_Id) VALUES (?, ?)', [bookingId, uid])
+				} catch (_) {}
+			}
+
+			await conn.commit()
+			return res.status(201).json({ id: bookingId })
+		} finally {
+			conn.release()
+		}
 	} catch (err) {
 		console.error('POST /api/bookings error:', err)
 		res.status(500).json({ error: 'Fehler beim Speichern der Buchung' })

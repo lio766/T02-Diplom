@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, onMounted } from 'vue'
+import { computed, ref, onMounted, watch, onUnmounted } from 'vue'
 import { getAuth, getToken } from '../lib/auth'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
@@ -9,28 +9,102 @@ const rooms = ref([])
 const date = ref('')
 const start = ref('08:00')
 const end = ref('09:00')
+const participantQuery = ref('')
+const participantResults = ref([])
+const participantLoading = ref(false)
+const participantError = ref('')
+const selectedParticipants = ref([])
+const showParticipantDropdown = ref(false)
 
 const session = ref(getAuth())
 const isLoggedIn = computed(() => Boolean(getToken()))
 
-const bookings = ref([])
-const loading = ref(false)
 const error = ref('')
 const success = ref('')
 
-async function loadBookings() {
-  loading.value = true
-  error.value = ''
+function parseParticipants(text) {
+  return String(text || '')
+    .split(/[,;\n\r\t]+/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+}
+
+function labelForUser(u) {
+  const name = (u?.name || '').trim()
+  const email = (u?.email || '').trim()
+  if (name && email) return `${name} (${email})`
+  return name || email || ''
+}
+
+function isAlreadySelected(user) {
+  const id = Number(user?.id)
+  if (!Number.isFinite(id)) return false
+  return selectedParticipants.value.some((p) => Number(p.id) === id)
+}
+
+function addParticipant(user) {
+  if (!user || !Number.isFinite(Number(user.id))) return
+  if (isAlreadySelected(user)) return
+  selectedParticipants.value.push({ id: user.id, email: user.email, name: user.name })
+  participantQuery.value = ''
+  participantResults.value = []
+  showParticipantDropdown.value = false
+}
+
+function removeParticipant(id) {
+  selectedParticipants.value = selectedParticipants.value.filter((p) => Number(p.id) !== Number(id))
+}
+
+let searchTimer = null
+let currentAbort = null
+
+async function searchUsers(q) {
+  participantError.value = ''
+  participantLoading.value = true
+  if (currentAbort) currentAbort.abort()
+  currentAbort = new AbortController()
+
   try {
-    const res = await fetch(`${API_BASE}/bookings`)
-    if (!res.ok) throw new Error('Fehler beim Laden der Buchungen')
-    bookings.value = await res.json()
+    const url = new URL(`${API_BASE}/users`, window.location.origin)
+    if (q) url.searchParams.set('q', q)
+    url.searchParams.set('limit', '12')
+
+    const res = await fetch(url.toString().replace(window.location.origin, ''), {
+      headers: { 'Authorization': `Bearer ${getToken()}` },
+      signal: currentAbort.signal,
+    })
+    if (res.status === 401) throw new Error('Bitte zuerst einloggen')
+    if (!res.ok) throw new Error('Fehler beim Laden der Benutzer')
+    const data = await res.json()
+    participantResults.value = Array.isArray(data) ? data : []
   } catch (e) {
-    error.value = e.message
+    if (e?.name === 'AbortError') return
+    participantError.value = e.message
+    participantResults.value = []
   } finally {
-    loading.value = false
+    participantLoading.value = false
   }
 }
+
+watch(participantQuery, (q) => {
+  participantError.value = ''
+  if (searchTimer) clearTimeout(searchTimer)
+  const query = String(q || '').trim()
+  if (!query) {
+    participantResults.value = []
+    showParticipantDropdown.value = false
+    return
+  }
+  showParticipantDropdown.value = true
+  searchTimer = setTimeout(() => {
+    searchUsers(query)
+  }, 250)
+})
+
+onUnmounted(() => {
+  if (searchTimer) clearTimeout(searchTimer)
+  if (currentAbort) currentAbort.abort()
+})
 
 async function loadRooms() {
   try {
@@ -59,6 +133,10 @@ async function submit() {
   const msg = validate()
   if (msg) { error.value = msg; return }
 
+  const participants = selectedParticipants.value
+    .map((p) => String(p.email || '').trim())
+    .filter(Boolean)
+
   try {
     const res = await fetch(`${API_BASE}/bookings`, {
       method: 'POST',
@@ -71,6 +149,7 @@ async function submit() {
         date: date.value,
         start_time: start.value,
         end_time: end.value,
+        participant_emails: participants,
       })
     })
     if (res.status === 401) {
@@ -84,13 +163,16 @@ async function submit() {
     if (!res.ok) throw new Error('Fehler beim Speichern')
 
     success.value = 'Buchung gespeichert.'
-    await loadBookings()
+    selectedParticipants.value = []
+    participantQuery.value = ''
+    participantResults.value = []
+    showParticipantDropdown.value = false
   } catch (e) {
     error.value = e.message
   }
 }
 
-onMounted(() => { loadRooms(); loadBookings() })
+onMounted(() => { loadRooms() })
 </script>
 
 <template>
@@ -127,36 +209,49 @@ onMounted(() => { loadRooms(); loadBookings() })
           Ende
           <input v-model="end" type="time" />
         </label>
+
+        <label class="full">
+          Teilnehmer hinzufügen
+          <div class="combo">
+            <input
+              v-model="participantQuery"
+              type="text"
+              autocomplete="off"
+              placeholder="Name oder E-Mail suchen…"
+              @focus="showParticipantDropdown = Boolean(participantQuery.trim())"
+              @keydown.esc.prevent="showParticipantDropdown = false"
+            />
+
+            <div v-if="showParticipantDropdown" class="dropdown">
+              <div class="ddRow" v-if="participantLoading">Suche…</div>
+              <div class="ddRow error" v-else-if="participantError">{{ participantError }}</div>
+              <button
+                v-for="u in participantResults"
+                :key="u.id"
+                class="ddItem"
+                type="button"
+                :disabled="isAlreadySelected(u)"
+                @click="addParticipant(u)"
+              >
+                <span class="ddMain">{{ labelForUser(u) }}</span>
+                <span class="ddHint" v-if="isAlreadySelected(u)">bereits hinzugefügt</span>
+              </button>
+              <div class="ddRow" v-if="!participantLoading && !participantError && participantResults.length === 0">Keine Treffer</div>
+            </div>
+          </div>
+
+          <div v-if="selectedParticipants.length" class="chips">
+            <div v-for="p in selectedParticipants" :key="p.id" class="chip">
+              <span>{{ labelForUser(p) }}</span>
+              <button type="button" class="chipX" @click="removeParticipant(p.id)">×</button>
+            </div>
+          </div>
+        </label>
       </div>
       <button type="submit" class="btn primary" :disabled="!isLoggedIn">Buchen</button>
       <p v-if="error" class="msg error">{{ error }}</p>
       <p v-if="success" class="msg success">{{ success }}</p>
     </form>
-
-    <div class="list">
-      <h2>Bestehende Buchungen</h2>
-      <p v-if="loading">Lade Daten…</p>
-      <table v-else>
-        <thead>
-          <tr>
-            <th>Raum</th>
-            <th>Datum</th>
-            <th>Start</th>
-            <th>Ende</th>
-            <th>Person</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="b in bookings" :key="b.id">
-            <td>{{ b.room }}</td>
-            <td>{{ b.date }}</td>
-            <td>{{ b.start_time }}</td>
-            <td>{{ b.end_time }}</td>
-            <td>{{ b.person }}</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
 
     <RouterLink to="/" class="back">Zurück zur Startseite</RouterLink>
   </section>
@@ -170,14 +265,24 @@ onMounted(() => { loadRooms(); loadBookings() })
 label { display: grid; gap: 0.35rem; font-size: 0.9rem; }
 label.full { grid-column: 1 / -1; }
 input { background: #0b1222; border: 1px solid #243146; color: #e5e7eb; padding: 0.6rem 0.7rem; border-radius: 0.5rem; }
+.combo { position: relative; }
+.dropdown { position: absolute; left: 0; right: 0; top: calc(100% + 6px); background: #0b1222; border: 1px solid #243146; border-radius: 0.6rem; overflow: hidden; z-index: 10; max-height: 260px; overflow-y: auto; }
+.ddRow { padding: 0.6rem 0.7rem; color: #94a3b8; font-size: 0.9rem; }
+.ddRow.error { color: #fca5a5; }
+.ddItem { width: 100%; text-align: left; padding: 0.6rem 0.7rem; background: transparent; border: none; border-bottom: 1px solid rgba(36, 49, 70, 0.7); color: #e5e7eb; cursor: pointer; display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; }
+.ddItem:last-child { border-bottom: none; }
+.ddItem:hover { background: rgba(148, 163, 184, 0.08); }
+.ddItem:disabled { opacity: 0.5; cursor: not-allowed; }
+.ddMain { font-weight: 600; }
+.ddHint { color: #94a3b8; font-size: 0.85rem; }
+.chips { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem; }
+.chip { display: inline-flex; align-items: center; gap: 0.5rem; background: rgba(66, 184, 131, 0.12); border: 1px solid rgba(66, 184, 131, 0.35); color: #e5e7eb; padding: 0.35rem 0.55rem; border-radius: 999px; font-size: 0.9rem; }
+.chipX { background: transparent; border: none; color: #e5e7eb; font-size: 1.05rem; line-height: 1; cursor: pointer; padding: 0 0.15rem; }
 .btn.ghost { outline: 1px solid #334155; color: #e5e7eb; background: transparent; padding: 0.7rem 1rem; border-radius: 0.6rem; font-weight: 600; text-decoration: none; width: fit-content; display: inline-grid; place-items: center; }
 .btn.primary { background: #42b883; color: #0a0f1e; border: none; padding: 0.7rem 1rem; border-radius: 0.6rem; font-weight: 600; width: fit-content; }
 .btn.primary:disabled { opacity: 0.5; cursor: not-allowed; }
 .msg { margin: 0; font-size: 0.9rem; }
 .msg.error { color: #fca5a5; }
 .msg.success { color: #86efac; }
-.list { background: #111827; border: 1px solid #1f2937; border-radius: 0.75rem; padding: 1rem; }
-table { width: 100%; border-collapse: collapse; }
-th, td { text-align: left; padding: 0.5rem; border-bottom: 1px solid #1f2937; }
 .back { color: #94a3b8; }
 </style>

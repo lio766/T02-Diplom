@@ -62,6 +62,9 @@ const gridHeightPx = computed(() => (endHour - startHour) * 60 * pxPerMinute)
 
 const bookings = ref([])
 
+const selectedBooking = ref(null)
+const showDetails = ref(false)
+
 const todayIso = computed(() => toIsoDate(new Date()))
 
 const now = ref(new Date())
@@ -172,6 +175,23 @@ function bookingStyle(b) {
     left: `${leftPct}%`,
     right: `${rightPct}%`,
   }
+}
+
+function bookingParticipantsLabel(b) {
+  const parts = Array.isArray(b?.participants) ? b.participants : []
+  const names = parts.map((p) => p?.name || p?.email).filter(Boolean)
+  if (names.length) return names.join(', ')
+  return b?.person || 'Belegt'
+}
+
+function openDetails(b) {
+  selectedBooking.value = b
+  showDetails.value = true
+}
+
+function closeDetails() {
+  showDetails.value = false
+  selectedBooking.value = null
 }
 
 function weekRangeQuery() {
@@ -322,10 +342,14 @@ onMounted(async () => {
               :key="b.id"
               class="booking"
               :style="bookingStyle(b)"
-              :title="`${b.start_time}–${b.end_time} ${b.person || ''}`.trim()"
+              :title="`${b.start_time}–${b.end_time} ${bookingParticipantsLabel(b)}`.trim()"
+              role="button"
+              tabindex="0"
+              @click="openDetails(b)"
+              @keydown.enter.prevent="openDetails(b)"
             >
               <div class="bookingTime">{{ b.start_time }}–{{ b.end_time }}</div>
-              <div class="bookingPerson">{{ b.person || 'Belegt' }}</div>
+              <div class="bookingPerson">{{ bookingParticipantsLabel(b) }}</div>
             </div>
           </div>
         </div>
@@ -338,6 +362,46 @@ onMounted(async () => {
     </div>
 
     <RouterLink to="/booking" class="back">Zur Buchung</RouterLink>
+
+    <div v-if="showDetails" class="modalOverlay" @click.self="closeDetails">
+      <div class="modal" role="dialog" aria-modal="true">
+        <div class="modalHead">
+          <h2 class="modalTitle">Buchungsdetails</h2>
+          <button class="btn" type="button" @click="closeDetails">Schließen</button>
+        </div>
+
+        <div v-if="selectedBooking" class="modalBody">
+          <div class="detailRow">
+            <span class="k">Raum</span>
+            <span class="v">{{ selectedBooking.room }}</span>
+          </div>
+          <div class="detailRow">
+            <span class="k">Datum</span>
+            <span class="v">{{ selectedBooking.date }}</span>
+          </div>
+          <div class="detailRow">
+            <span class="k">Zeitraum</span>
+            <span class="v">{{ selectedBooking.start_time }} – {{ selectedBooking.end_time }}</span>
+          </div>
+
+          <div class="detailRow top">
+            <span class="k">Eingetragene Benutzer</span>
+            <span class="v">
+              <template v-if="Array.isArray(selectedBooking.participants) && selectedBooking.participants.length">
+                <ul class="participants">
+                  <li v-for="p in selectedBooking.participants" :key="p.id">
+                    {{ p.name || p.email }}<span v-if="p.email && p.name"> ({{ p.email }})</span>
+                  </li>
+                </ul>
+              </template>
+              <template v-else>
+                <span>—</span>
+              </template>
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
   </section>
 </template>
 
@@ -383,10 +447,24 @@ select { min-width: 260px; background: #0b1222; border: 1px solid #243146; color
 .nowLabel { position: absolute; left: 6px; top: -10px; font-size: 0.75rem; background: rgba(15, 23, 42, 0.9); border: 1px solid rgba(239, 68, 68, 0.45); color: #fecaca; padding: 0.1rem 0.35rem; border-radius: 999px; }
 
 .booking { position: absolute; background: rgba(66, 184, 131, 0.18); border: 1px solid rgba(66, 184, 131, 0.45); border-left: 4px solid #42b883; border-radius: 0.5rem; padding: 0.35rem 0.45rem; overflow: hidden; margin: 0 4px; }
+.booking { cursor: pointer; }
+.booking:focus { outline: 2px solid rgba(66, 184, 131, 0.85); outline-offset: 2px; }
 .bookingTime { font-size: 0.8rem; color: #d1fae5; font-weight: 700; }
 .bookingPerson { font-size: 0.85rem; color: #e5e7eb; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
 
 .footer { padding: 0.6rem 0.9rem; border-top: 1px solid #1f2937; color: #94a3b8; font-size: 0.9rem; }
 
 .back { color: #94a3b8; width: fit-content; }
+
+.modalOverlay { position: fixed; inset: 0; background: rgba(0,0,0,0.55); display: grid; place-items: center; padding: 1rem; z-index: 50; }
+.modal { width: min(720px, 100%); background: #111827; border: 1px solid #1f2937; border-radius: 0.9rem; padding: 1rem; display: grid; gap: 0.75rem; }
+.modalHead { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
+.modalTitle { margin: 0; font-size: 1.1rem; }
+.modalBody { display: grid; gap: 0.6rem; }
+.detailRow { display: grid; grid-template-columns: 160px 1fr; gap: 0.75rem; align-items: start; }
+.detailRow.top { align-items: start; }
+.k { color: #94a3b8; font-size: 0.9rem; }
+.v { color: #e5e7eb; }
+.participants { margin: 0.25rem 0 0; padding-left: 1.1rem; }
+.participants li { margin: 0.1rem 0; }
 </style>
