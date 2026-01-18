@@ -1,6 +1,7 @@
 # --- Eigene Umgebungsvariablen & Passwörter ---
 .env
 *.env
+secrets/
 
 # --- Backend (Node/Express) ---
 backend/node_modules/
