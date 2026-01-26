@@ -67,7 +67,7 @@ services:
       KC_HTTP_RELATIVE_PATH: /auth
 
       KEYCLOAK_ADMIN: admin
-      KEYCLOAK_ADMIN_PASSWORD: /run/secrets/keycloak_admin_password
+      KEYCLOAK_ADMIN_PASSWORD: adminpassword123
 
       KC_LOG_LEVEL: INFO
     depends_on:
