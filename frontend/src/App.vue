@@ -1,31 +1,9 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { getAuth, getToken } from './lib/auth'
+import { useKeycloak } from '@josempgon/vue-keycloak';
 
-const session = ref(getAuth())
+const { isPending, isAuthenticated, error, username, userId, keycloak } = useKeycloak();
 
-function syncSession() {
-  session.value = getAuth()
-}
-
-onMounted(() => {
-  window.addEventListener('auth-changed', syncSession)
-  // also update if multiple tabs are open
-  window.addEventListener('storage', syncSession)
-})
-
-onUnmounted(() => {
-  window.removeEventListener('auth-changed', syncSession)
-  window.removeEventListener('storage', syncSession)
-})
-
-const isLoggedIn = computed(() => Boolean(getToken()))
-const isAdmin = computed(() => {
-  const u = session.value?.user
-  return Boolean(u?.is_admin)
-    || String(u?.rollen_name || '').toLowerCase() === 'admin'
-    || Number(u?.rollen_id) === 1
-})
 </script>
 
 <template>
@@ -34,11 +12,11 @@ const isAdmin = computed(() => {
       <a class="brand" href="/">Raumbuchung</a>
       <div class="links">
         <RouterLink to="/" class="link">Start</RouterLink>
-        <RouterLink v-if="!isLoggedIn" to="/login" class="link">Login</RouterLink>
-        <RouterLink v-if="!isLoggedIn" to="/register" class="link">Registrieren</RouterLink>
+        <RouterLink v-if="!isAuthenticated" to="/login" class="link">Login</RouterLink>
+        <RouterLink v-if="!isAuthenticated" to="/register" class="link">Registrieren</RouterLink>
         <RouterLink to="/booking" class="link">Buchen</RouterLink>
         <RouterLink to="/calendar" class="link">Kalender</RouterLink>
-        <RouterLink v-if="isAdmin" to="/admin" class="link">Admin</RouterLink>
+        <RouterLink to="/admin" class="link">Admin</RouterLink>
       </div>
     </nav>
     <RouterView />

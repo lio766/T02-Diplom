@@ -2,6 +2,7 @@
 .env
 *.env
 secrets/
+node_modules
 
 # --- Backend (Node/Express) ---
 backend/node_modules/
