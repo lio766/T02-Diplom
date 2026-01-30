@@ -1,16 +1,17 @@
 services:
   # Database (MySQL)
-  mysql:
+  db_kc:
     image: mysql:8.0
-    container_name: agora-mysql
     restart: unless-stopped
     environment:
       MYSQL_DATABASE: keycloak
       MYSQL_USER: keycloak
       MYSQL_PASSWORD: mypassword123
       MYSQL_ROOT_PASSWORD: myrootpassword123
+    ports:
+      - "3307:3306"
     volumes:
-      - db_data:/var/lib/mysql
+      - db_kc_data:/var/lib/mysql
     networks:
       - app-network
     healthcheck:
@@ -23,7 +24,6 @@ services:
   # API (Node/Express)
   backend:
     build: ./backend
-    container_name: agora-backend
     restart: unless-stopped
     environment:
       # Use host machine's MySQL instance
@@ -92,7 +92,7 @@ networks:
     driver: bridge
 
 volumes:
-  db_data:
+  db_kc_data:
   keycloak_data:
 
 secrets:
