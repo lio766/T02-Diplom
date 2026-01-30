@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useKeycloak } from '@josempgon/vue-keycloak';
 
-const { isPending, isAuthenticated, error, username, userId, keycloak } = useKeycloak();
+const { isPending, isAuthenticated, error, username, userId, keycloak, hasRoles() } = useKeycloak();
 
 </script>
 
@@ -16,7 +16,7 @@ const { isPending, isAuthenticated, error, username, userId, keycloak } = useKey
         <RouterLink v-if="!isAuthenticated" to="/register" class="link">Registrieren</RouterLink>
         <RouterLink to="/booking" class="link">Buchen</RouterLink>
         <RouterLink to="/calendar" class="link">Kalender</RouterLink>
-        <RouterLink to="/admin" class="link">Admin</RouterLink>
+        <RouterLink v-if="hasRoles(["genehmiger"])"to="/admin" class="link">Admin</RouterLink>
       </div>
     </nav>
     <RouterView />
