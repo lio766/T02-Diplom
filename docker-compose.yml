@@ -8,10 +8,14 @@ services:
     env_file:
       - .env
     environment:
-      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
-      MYSQL_DATABASE: ${DB_NAME}
-      MYSQL_USER: ${DB_USER}
-      MYSQL_PASSWORD: ${DB_PASSWORD}
+#      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+#      MYSQL_DATABASE: ${DB_NAME}
+#      MYSQL_USER: ${DB_USER}
+#      MYSQL_PASSWORD: ${DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: veryRootSecret
+      MYSQL_DATABASE: agora_db
+      MYSQL_USER:  agora
+      MYSQL_PASSWORD: passwordSecret
     volumes:
       - db_data:/var/lib/mysql # persistent storage
       - ./backend/db:/docker-entrypoint-initdb.d # Init sql scripts
@@ -33,6 +37,10 @@ services:
       - .env
     environment:
       DB_HOST: db
+      DB_PORT: 3306
+      DB_NAME: agora_db
+      DB_USER: agora
+      DB_PASSWORD: passwordSecret
     depends_on:
       db:
         condition: service_healthy
