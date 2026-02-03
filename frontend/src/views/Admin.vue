@@ -65,7 +65,7 @@ async function submit() {
     if (res.status === 403) throw new Error(data.error || 'Keine Admin-Berechtigung')
     if (!res.ok) throw new Error(data.error || 'Raum konnte nicht angelegt werden')
 
-    msg.value = `Raum angelegt (ID: ${data.id}).`
+    msg.value = `Raum erfolgreich angelegt (ID: ${data.id}).`
     bezeichnung.value = ''
     standort.value = ''
     kapazitaet.value = ''
@@ -78,65 +78,206 @@ async function submit() {
 </script>
 
 <template>
-  <section class="admin">
-    <h1>Admin</h1>
+  <div class="admin-page">
+    <header class="page-header">
+      <h1 class="page-title">Admin Dashboard</h1>
+      <p class="page-subtitle">Verwaltung von Räumen und Ressourcen</p>
+    </header>
 
-    <div class="card" v-if="!isLoggedIn">
-      <p class="msg error">Du musst eingeloggt sein.</p>
-      <RouterLink class="btn primary" to="/login">Zum Login</RouterLink>
-    </div>
-
-    <div class="card" v-else-if="!isAdmin">
-      <p class="msg error">Du hast keine Admin-Rechte.</p>
-      <RouterLink class="btn ghost" to="/booking">Zur Buchung</RouterLink>
-    </div>
-
-    <form v-else class="card" @submit.prevent="submit">
-      <h2>Neuen Raum anlegen</h2>
-
-      <label>
-        Bezeichnung
-        <input v-model="bezeichnung" type="text" placeholder="z.B. Konferenzraum A" />
-      </label>
-
-      <label>
-        Standort
-        <input v-model="standort" type="text" placeholder="z.B. Gebäude 1 / 2. OG" />
-      </label>
-
-      <label>
-        Kapazität
-        <input v-model="kapazitaet" type="number" min="1" step="1" placeholder="z.B. 12" />
-      </label>
-
-      <div class="actions">
-        <button class="btn primary" type="submit" :disabled="loading">
-          {{ loading ? 'Speichere…' : 'Raum hinzufügen' }}
-        </button>
-        <RouterLink class="btn ghost" to="/calendar">Zum Kalender</RouterLink>
+    <!-- Error State: Not Logged In -->
+    <div v-if="!isLoggedIn" class="card error-state">
+      <div class="error-content">
+        <div class="error-icon">🔒</div>
+        <h2>Zugriff beschränkt</h2>
+        <p>Du musst eingeloggt sein, um Räume zu verwalten.</p>
+        <RouterLink class="btn btn-primary" to="/login">Zum Login</RouterLink>
       </div>
+    </div>
 
-      <p v-if="msg" class="msg success">{{ msg }}</p>
-      <p v-if="err" class="msg error">{{ err }}</p>
-    </form>
+    <!-- Error State: No Admin Rights -->
+    <div v-else-if="!isAdmin" class="card error-state">
+      <div class="error-content">
+        <div class="error-icon">🛡️</div>
+        <h2>Keine Berechtigung</h2>
+        <p>Dieser Bereich ist nur für Administratoren zugänglich.</p>
+        <RouterLink class="btn btn-secondary" to="/booking">Zur Buchung</RouterLink>
+      </div>
+    </div>
 
-    <RouterLink to="/" class="back">Zurück zur Startseite</RouterLink>
-  </section>
+    <!-- Admin Form -->
+    <div v-else class="admin-content">
+      <div class="card admin-form-card">
+        <div class="card-header">
+          <h2>Neuen Raum hinzufügen</h2>
+          <p>Erfasse die Details für einen neuen Raum.</p>
+        </div>
+
+        <form @submit.prevent="submit" class="admin-form">
+          <!-- Bezeichnung Field -->
+          <div class="form-group">
+            <label for="bez" class="form-label">Bezeichnung <span class="required">*</span></label>
+            <input 
+              id="bez" 
+              v-model="bezeichnung" 
+              type="text" 
+              placeholder="z.B. Meetingraum A"
+              class="form-input"
+              required
+            />
+          </div>
+
+          <div class="form-row">
+            <!-- Location Field -->
+            <div class="form-group">
+              <label for="loc" class="form-label">Standort <span class="required">*</span></label>
+              <input 
+                id="loc" 
+                v-model="standort" 
+                type="text" 
+                placeholder="z.B. 1. Stock"
+                class="form-input"
+                required
+              />
+            </div>
+
+            <!-- Capacity Field -->
+            <div class="form-group">
+              <label for="cap" class="form-label">Kapazität <span class="required">*</span></label>
+              <input 
+                id="cap" 
+                v-model="kapazitaet" 
+                type="number" 
+                placeholder="z.B. 8"
+                class="form-input"
+                min="1"
+                required
+              />
+            </div>
+          </div>
+
+          <!-- Feedback Messages -->
+          <div v-if="msg || err" class="message" :class="{ 'is-error': err, 'is-success': msg }">
+            {{ msg || err }}
+          </div>
+
+          <!-- Actions -->
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary" :disabled="loading">
+              {{ loading ? 'Wird gespeichert...' : 'Raum anlegen' }}
+            </button>
+            <button type="button" class="btn btn-secondary" @click="() => { bezeichnung=''; standort=''; kapazitaet=''; msg=''; err=''; }">
+              Zurücksetzen
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
 </template>
 
 <style scoped>
-.admin { min-height: 70vh; display: grid; place-items: center; color: #e5e7eb; background: #0f172a; padding: 2rem 1rem; }
-h1 { margin-bottom: 1rem; }
-.card { background: #111827; border: 1px solid #1f2937; border-radius: 0.75rem; padding: 1rem; display: grid; gap: 0.75rem; min-width: 320px; }
-h2 { margin: 0 0 0.25rem; font-size: 1.1rem; }
-label { display: grid; gap: 0.35rem; font-size: 0.9rem; }
-input { background: #0b1222; border: 1px solid #243146; color: #e5e7eb; padding: 0.6rem 0.7rem; border-radius: 0.5rem; }
-.actions { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
-.btn.primary { background: #42b883; color: #0a0f1e; border: none; padding: 0.7rem 1rem; border-radius: 0.6rem; font-weight: 700; cursor: pointer; }
-.btn.primary:disabled { opacity: 0.6; cursor: not-allowed; }
-.btn.ghost { background: transparent; color: #e5e7eb; border: 1px solid #334155; padding: 0.7rem 1rem; border-radius: 0.6rem; font-weight: 600; text-decoration: none; display: inline-grid; place-items: center; }
-.msg { margin: 0; font-size: 0.9rem; }
-.msg.success { color: #86efac; }
-.msg.error { color: #fca5a5; }
-.back { margin-top: 0.75rem; display: inline-block; color: #94a3b8; }
+.page-header {
+  margin-bottom: var(--space-8);
+  text-align: center;
+}
+
+.page-title {
+  margin-bottom: var(--space-2);
+}
+
+.page-subtitle {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-lg);
+}
+
+/* Error States */
+.error-state {
+  text-align: center;
+  padding: var(--space-8);
+  max-width: 500px;
+  margin: 0 auto;
+}
+
+.error-icon {
+  font-size: 3rem;
+  margin-bottom: var(--space-4);
+}
+
+/* Admin Form */
+.admin-content {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.admin-form-card {
+  padding: var(--space-8);
+}
+
+.card-header {
+  margin-bottom: var(--space-6);
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: var(--space-4);
+}
+
+.card-header h2 {
+  margin-bottom: var(--space-2);
+}
+
+.card-header p {
+  color: var(--color-text-secondary);
+  margin-bottom: 0;
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+}
+
+.required {
+  color: var(--color-danger);
+}
+
+.message {
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-4);
+  text-align: center;
+}
+
+.is-error {
+  background-color: var(--color-danger-bg);
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
+
+.is-success {
+  background-color: var(--color-success-bg);
+  color: #166534;
+  border: 1px solid #bbf7d0;
+}
+
+.form-actions {
+  display: flex;
+  gap: var(--space-3);
+  justify-content: flex-end;
+}
+
+@media (max-width: 600px) {
+  .form-row {
+    grid-template-columns: 1fr;
+  }
+  
+  .form-actions {
+    flex-direction: column;
+  }
+  
+  .btn {
+    width: 100%;
+  }
+}
 </style>
+
+
+
+

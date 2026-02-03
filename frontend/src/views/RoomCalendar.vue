@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { getAuth, getToken } from '../lib/auth'
+import BookingForm from '../components/BookingForm.vue'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
@@ -10,6 +11,10 @@ const roomId = ref('')
 const loadingRooms = ref(false)
 const loadingBookings = ref(false)
 const error = ref('')
+
+const currentView = ref('calendar') // 'calendar' or 'table'
+const showBookingPanel = ref(false)
+
 
 const weekCursor = ref(new Date())
 
@@ -92,6 +97,13 @@ const now = ref(new Date())
 const nowTimer = setInterval(() => {
   now.value = new Date()
 }, 30_000)
+
+const sortedBookings = computed(() => {
+  return [...bookings.value].sort((a, b) => {
+    if (a.date !== b.date) return a.date.localeCompare(b.date)
+    return a.start_time.localeCompare(b.start_time)
+  })
+})
 
 onUnmounted(() => {
   clearInterval(nowTimer)
@@ -418,251 +430,897 @@ onMounted(async () => {
 </script>
 
 <template>
-  <section class="page">
-    <header class="topbar">
-      <div class="title">
-        <h1>Raum-Kalender</h1>
-        <p class="subtitle">Wähle einen Raum und sieh die Belegung in der Wochenansicht.</p>
-      </div>
-
-      <div class="controls">
-        <label class="field">
-          Raum
-          <select v-model="roomId" :disabled="loadingRooms">
-            <option v-for="r in rooms" :key="r.id" :value="String(r.id)">
-              {{ r.name || r.Bezeichnung || r.bezeichnung }}
-            </option>
-          </select>
-        </label>
-
-        <div class="weeknav">
-          <button class="btn" type="button" @click="prevWeek">◀</button>
-          <button class="btn" type="button" @click="goToday">Heute</button>
-          <button class="btn" type="button" @click="nextWeek">▶</button>
-        </div>
-
-        <div class="weeklabel">{{ weekLabel }}</div>
-      </div>
-    </header>
-
-    <p v-if="error" class="msg error">{{ error }}</p>
-
-    <div class="calendarCard">
-      <div class="headerRow">
-        <div class="corner"></div>
-        <div v-for="(d, idx) in weekDays" :key="toIsoDate(d)" class="dayHeader" :class="{ today: toIsoDate(d) === todayIso }">
-          <div class="dow">{{ dayLabels[idx] }}</div>
-          <div class="date">{{ pad2(d.getDate()) }}.{{ pad2(d.getMonth() + 1) }}</div>
-        </div>
-      </div>
-
-      <div class="body" :style="{ height: gridHeightPx + 'px' }">
-        <div class="timeCol">
-          <div v-for="t in timeSlots" :key="t" class="timeTick" :style="{ height: (60 * pxPerMinute) + 'px' }">
-            <span>{{ t }}</span>
-          </div>
-        </div>
-
-        <div class="days">
-          <div
-            v-for="d in weekDays"
-            :key="toIsoDate(d)"
-            class="dayCol"
-            :class="{ today: toIsoDate(d) === todayIso }"
-            :style="{ height: gridHeightPx + 'px' }"
-          >
-            <div v-if="toIsoDate(d) === todayIso && showNowLine" class="nowLine" :style="nowLineStyle">
-              <span class="nowLabel">{{ nowLabel }}</span>
-            </div>
-
-            <div
-              v-for="h in (endHour - startHour)"
-              :key="h"
-              class="hourLine"
-              :style="{ top: (h * 60 * pxPerMinute) + 'px' }"
-            ></div>
-
-            <div
-              v-for="b in bookingsForDay(d)"
-              :key="b.id"
-              class="booking"
-              :style="bookingStyle(b)"
-              :title="`${b.start_time}–${b.end_time} ${bookingParticipantsLabel(b)}`.trim()"
-              role="button"
-              tabindex="0"
-              @click="openDetails(b)"
-              @keydown.enter.prevent="openDetails(b)"
-            >
-              <div class="bookingTime">{{ b.start_time }}–{{ b.end_time }}</div>
-              <div class="bookingPerson">{{ bookingParticipantsLabel(b) }}</div>
+  <section class="calendar-page">
+    <div class="calendar-container">
+      <div class="calendar-layout">
+        <!-- Toolbar -->
+        <header class="toolbar">
+          <div class="toolbar-group">
+            <div class="select-wrapper">
+               <select v-model="roomId" class="form-select room-select" :disabled="loadingRooms">
+                 <option v-for="r in rooms" :key="r.id" :value="String(r.id)">
+                   {{ r.name || r.Bezeichnung || r.bezeichnung }}
+                 </option>
+               </select>
+               <span class="select-arrow">▼</span>
             </div>
           </div>
+
+          <div class="toolbar-center">
+            <div class="week-nav">
+               <button class="nav-btn" type="button" @click="prevWeek" aria-label="Vorherige Woche">
+                  <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
+               </button>
+               <button class="nav-btn today-btn" type="button" @click="goToday">Heute</button>
+               <button class="nav-btn" type="button" @click="nextWeek" aria-label="Nächste Woche">
+                  <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
+               </button>
+            </div>
+            <div class="current-week-label">{{ weekLabel }}</div>
+          </div>
+
+          <div class="toolbar-group right">
+             <div class="view-toggle">
+               <button class="toggle-btn" :class="{ active: currentView === 'calendar' }" @click="currentView = 'calendar'">Kalender</button>
+               <button class="toggle-btn" :class="{ active: currentView === 'table' }" @click="currentView = 'table'">Tabelle</button>
+             </div>
+             <button class="btn btn-primary btn-booking" @click="showBookingPanel = true">
+                <span>+</span> Buchung
+             </button>
+          </div>
+        </header>
+
+        <div v-if="error" class="message is-error">
+          <span class="icon">⚠️</span> {{ error }}
+        </div>
+
+        <!-- Calendar Grid -->
+        <div v-if="currentView === 'calendar'" class="calendar-card">
+           <div class="calendar-header">
+              <div class="time-column-header"></div>
+              <div v-for="(d, idx) in weekDays" :key="toIsoDate(d)" class="day-column-header" :class="{ 'is-today': toIsoDate(d) === todayIso }">
+                 <div class="dow">{{ dayLabels[idx] }}</div>
+                 <div class="dom">{{ pad2(d.getDate()) }}</div>
+              </div>
+           </div>
+
+           <div class="calendar-body-scroll">
+              <div class="calendar-body" :style="{ height: gridHeightPx + 'px' }">
+                 <!-- Time Axis -->
+                 <div class="time-column">
+                    <div v-for="t in timeSlots" :key="t" class="time-tick" :style="{ height: (60 * pxPerMinute) + 'px' }">
+                       <span>{{ t }}</span>
+                    </div>
+                 </div>
+
+                 <!-- Days Grid -->
+                 <div class="days-container">
+                    <div
+                      v-for="d in weekDays"
+                      :key="toIsoDate(d)"
+                      class="day-column"
+                      :class="{ 'is-today': toIsoDate(d) === todayIso }"
+                      :style="{ height: gridHeightPx + 'px' }"
+                    >
+                       <!-- Current Time Line -->
+                       <div v-if="toIsoDate(d) === todayIso && showNowLine" class="now-line" :style="nowLineStyle">
+                          <div class="now-dot"></div>
+                       </div>
+
+                       <!-- Hour Grid Lines -->
+                       <div
+                         v-for="h in (endHour - startHour)"
+                         :key="h"
+                         class="grid-line"
+                         :style="{ top: (h * 60 * pxPerMinute) + 'px' }"
+                       ></div>
+
+                       <!-- Bookings -->
+                       <div
+                         v-for="b in bookingsForDay(d)"
+                         :key="b.id"
+                         class="booking-item"
+                         :style="bookingStyle(b)"
+                         :title="`${b.start_time}–${b.end_time} ${bookingParticipantsLabel(b)}`.trim()"
+                         role="button"
+                         tabindex="0"
+                         @click="openDetails(b)"
+                         @keydown.enter.prevent="openDetails(b)"
+                       >
+                          <div class="booking-time">{{ b.start_time }}</div>
+                          <div class="booking-title">{{ bookingParticipantsLabel(b) }}</div>
+                       </div>
+                    </div>
+                 </div>
+              </div>
+           </div>
+        </div>
+
+        <!-- Table View -->
+        <div v-else class="calendar-card table-view">
+           <div class="table-scroll">
+              <table class="data-table">
+                 <thead>
+                    <tr>
+                       <th>Datum</th>
+                       <th>Zeit</th>
+                       <th>Raum</th>
+                       <th>Titel / Teilnehmer</th>
+                       <th style="width: 60px"></th>
+                    </tr>
+                 </thead>
+                 <tbody>
+                    <tr v-for="b in sortedBookings" :key="b.id">
+                       <td>{{ toIsoDate(b.date) }}</td>
+                       <td class="whitespace-nowrap">{{ b.start_time }} – {{ b.end_time }}</td>
+                       <td>
+                          {{ rooms.find(r => String(r.id) === String(b.room_id))?.name || 'Unbekannt' }}
+                       </td>
+                       <td>
+                          <div class="cell-title" :title="bookingParticipantsLabel(b)">{{ bookingParticipantsLabel(b) }}</div>
+                       </td>
+                       <td style="text-align: right;">
+                          <button class="btn-icon" @click="openDetails(b)" title="Bearbeiten/Details">✏️</button>
+                       </td>
+                    </tr>
+                    <tr v-if="sortedBookings.length === 0">
+                       <td colspan="5" class="empty-state">Keine Buchungen gefunden.</td>
+                    </tr>
+                 </tbody>
+              </table>
+           </div>
         </div>
       </div>
-
-      <div class="footer">
-        <span v-if="loadingBookings">Lade Buchungen…</span>
-        <span v-else> {{ bookings.length }} Buchung(en) in dieser Woche </span>
-      </div>
+      
+      <!-- Side Panel for Booking -->
+      <aside v-if="showBookingPanel" class="booking-sidebar">
+         <BookingForm 
+            :rooms="rooms"
+            @close="showBookingPanel = false"
+            @booking-created="() => { loadBookings(); showBookingPanel = false; }"
+         />
+      </aside>
     </div>
 
-    <RouterLink to="/booking" class="back">Zur Buchung</RouterLink>
+    <!-- Booking Details Modal -->
+    <Teleport to="body">
+      <div v-if="showDetails" class="modal-backdrop" @click.self="closeDetails">
+         <div class="modal" role="dialog" aria-modal="true">
+            <header class="modal-header">
+               <h2 class="modal-title">Buchungsdetails</h2>
+               <button class="close-btn" type="button" @click="closeDetails" aria-label="Schließen">✕</button>
+            </header>
 
-    <div v-if="showDetails" class="modalOverlay" @click.self="closeDetails">
-      <div class="modal" role="dialog" aria-modal="true">
-        <div class="modalHead">
-          <h2 class="modalTitle">Buchungsdetails</h2>
-          <button class="btn" type="button" @click="closeDetails">Schließen</button>
-        </div>
+            <div v-if="selectedBooking" class="modal-body">
+               <template v-if="isAdmin">
+                  <div class="form-group">
+                     <label class="form-label">Raum</label>
+                     <div class="select-wrapper">
+                        <select v-model="editRoomId" class="form-input">
+                           <option v-for="r in rooms" :key="r.id" :value="String(r.id)">
+                              {{ r.name || r.Bezeichnung || r.bezeichnung }}
+                           </option>
+                        </select>
+                        <span class="select-arrow">▼</span>
+                     </div>
+                  </div>
+                  <div class="form-row">
+                     <div class="form-group">
+                        <label class="form-label">Datum</label>
+                        <input v-model="editDate" class="form-input" type="date" />
+                     </div>
+                     <div class="form-group">
+                        <label class="form-label">Start</label>
+                        <input v-model="editStart" class="form-input" type="time" />
+                     </div>
+                     <div class="form-group">
+                        <label class="form-label">Ende</label>
+                        <input v-model="editEnd" class="form-input" type="time" />
+                     </div>
+                  </div>
+                  <div class="form-group">
+                     <label class="form-label">Teilnehmer (E-Mails)</label>
+                     <textarea v-model="editParticipants" class="form-input font-mono" rows="3" placeholder="mail1@example.com, mail2@example.com"></textarea>
+                     <small class="form-hint">Komma/Zeilenumbruch getrennt.</small>
+                  </div>
 
-        <div v-if="selectedBooking" class="modalBody">
-          <template v-if="isAdmin">
-            <div class="detailRow">
-              <span class="k">Raum</span>
-              <span class="v">
-                <select v-model="editRoomId" class="inp">
-                  <option v-for="r in rooms" :key="r.id" :value="String(r.id)">
-                    {{ r.name || r.Bezeichnung || r.bezeichnung }}
-                  </option>
-                </select>
-              </span>
-            </div>
-            <div class="detailRow">
-              <span class="k">Datum</span>
-              <span class="v"><input v-model="editDate" class="inp" type="date" /></span>
-            </div>
-            <div class="detailRow">
-              <span class="k">Start</span>
-              <span class="v"><input v-model="editStart" class="inp" type="time" /></span>
-            </div>
-            <div class="detailRow">
-              <span class="k">Ende</span>
-              <span class="v"><input v-model="editEnd" class="inp" type="time" /></span>
-            </div>
-            <div class="detailRow top">
-              <span class="k">Teilnehmer (E-Mails)</span>
-              <span class="v">
-                <textarea v-model="editParticipants" class="inp" rows="3" placeholder="mail1@example.com, mail2@example.com"></textarea>
-                <div class="hint">Komma/Zeilenumbruch getrennt. Unbekannte E-Mails werden abgelehnt.</div>
-              </span>
-            </div>
+                  <div class="modal-actions">
+                     <button class="btn btn-primary" type="button" :disabled="saving || deleting" @click="saveBooking">
+                        {{ saving ? 'Speichern...' : 'Speichern' }}
+                     </button>
+                     <button class="btn btn-text text-danger" type="button" :disabled="saving || deleting" @click="deleteBooking">
+                        {{ deleting ? 'Löschen...' : 'Löschen' }}
+                     </button>
+                  </div>
+               </template>
 
-            <div class="actions">
-              <button class="btn primary" type="button" :disabled="saving || deleting" @click="saveBooking">
-                {{ saving ? 'Speichere…' : 'Speichern' }}
-              </button>
-              <button class="btn danger" type="button" :disabled="saving || deleting" @click="deleteBooking">
-                {{ deleting ? 'Lösche…' : 'Löschen' }}
-              </button>
-            </div>
-          </template>
+               <template v-else>
+                  <div class="detail-list">
+                     <div class="detail-item">
+                        <span class="label">Raum</span>
+                        <span class="value">{{ selectedBooking.room || rooms.find(r => String(r.id) === String(selectedBooking.room_id))?.name || '---' }}</span>
+                     </div>
+                     <div class="detail-item">
+                        <span class="label">Zeitraum</span>
+                        <span class="value">{{ toIsoDate(selectedBooking.date) }} <br> {{ selectedBooking.start_time }} – {{ selectedBooking.end_time }}</span>
+                     </div>
+                  </div>
+               </template>
 
-          <template v-else>
-            <div class="detailRow">
-              <span class="k">Raum</span>
-              <span class="v">{{ selectedBooking.room }}</span>
-            </div>
-            <div class="detailRow">
-              <span class="k">Datum</span>
-              <span class="v">{{ selectedBooking.date }}</span>
-            </div>
-            <div class="detailRow">
-              <span class="k">Zeitraum</span>
-              <span class="v">{{ selectedBooking.start_time }} – {{ selectedBooking.end_time }}</span>
-            </div>
-          </template>
+               <div class="detail-section">
+                  <h3>Teilnehmer</h3>
+                  <ul v-if="Array.isArray(selectedBooking.participants) && selectedBooking.participants.length" class="participant-list">
+                     <li v-for="p in selectedBooking.participants" :key="p.id">
+                        <div class="participant-avatar">{{ (p.name?.[0] || p.email?.[0] || '?').toUpperCase() }}</div>
+                        <span class="participant-name">{{ p.name || p.email }}</span>
+                     </li>
+                  </ul>
+                  <p v-else class="text-muted">Keine Teilnehmer gelistet.</p>
+               </div>
 
-          <div class="detailRow top">
-            <span class="k">Eingetragene Benutzer</span>
-            <span class="v">
-              <template v-if="Array.isArray(selectedBooking.participants) && selectedBooking.participants.length">
-                <ul class="participants">
-                  <li v-for="p in selectedBooking.participants" :key="p.id">
-                    {{ p.name || p.email }}<span v-if="p.email && p.name"> ({{ p.email }})</span>
-                  </li>
-                </ul>
-              </template>
-              <template v-else>
-                <span>—</span>
-              </template>
-            </span>
-          </div>
-
-          <p v-if="detailMsg" class="msg success">{{ detailMsg }}</p>
-          <p v-if="detailErr" class="msg error">{{ detailErr }}</p>
-        </div>
+               <div v-if="detailMsg" class="message is-success">{{ detailMsg }}</div>
+               <div v-if="detailErr" class="message is-error">{{ detailErr }}</div>
+            </div>
+         </div>
       </div>
-    </div>
+    </Teleport>
   </section>
 </template>
 
 <style scoped>
-.page { min-height: 70vh; color: #e5e7eb; background: #0f172a; padding: 1.5rem 1rem 2.5rem; display: grid; gap: 1rem; }
-.topbar { display: grid; gap: 0.75rem; }
-.title h1 { margin: 0; }
-.subtitle { margin: 0.25rem 0 0; color: #94a3b8; }
+.calendar-page {
+  /* Height managed by flex layout in App */
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
 
-.controls { display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-end; justify-content: space-between; }
-.field { display: grid; gap: 0.35rem; font-size: 0.9rem; }
-select { min-width: 260px; background: #0b1222; border: 1px solid #243146; color: #e5e7eb; padding: 0.6rem 0.7rem; border-radius: 0.5rem; }
+.calendar-container {
+  width: 100%;
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 0 var(--space-6) var(--space-6);
+  flex: 1;
+  display: flex;
+  flex-direction: row; /* Change to row to support sidebar */
+  gap: var(--space-6);
+}
 
-.weeknav { display: flex; gap: 0.5rem; align-items: center; }
-.btn { background: #111827; border: 1px solid #1f2937; color: #e5e7eb; padding: 0.5rem 0.75rem; border-radius: 0.5rem; cursor: pointer; }
-.btn:hover { border-color: #334155; }
-.weeklabel { color: #94a3b8; font-size: 0.95rem; }
+.calendar-layout {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  gap: var(--space-6);
+  flex: 1;
+}
 
-.msg { margin: 0; font-size: 0.95rem; }
-.msg.error { color: #fca5a5; }
-.msg.success { color: #86efac; }
+/* Sidebar for Booking */
+.booking-sidebar {
+  width: 350px;
+  background-color: white;
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  border: 1px solid rgba(0,0,0,0.05);
+}
 
-.calendarCard { background: #111827; border: 1px solid #1f2937; border-radius: 0.9rem; overflow: hidden; }
-.headerRow { display: grid; grid-template-columns: 72px repeat(7, 1fr); background: #0b1222; border-bottom: 1px solid #1f2937; }
-.corner { border-right: 1px solid #1f2937; }
-.dayHeader { padding: 0.6rem 0.5rem; border-right: 1px solid #1f2937; display: grid; gap: 0.15rem; }
-.dayHeader:last-child { border-right: none; }
-.dayHeader.today { background: rgba(66, 184, 131, 0.12); }
-.dow { font-weight: 700; color: #e5e7eb; }
-.date { color: #94a3b8; font-size: 0.9rem; }
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
 
-.body { display: grid; grid-template-columns: 72px 1fr; }
-.timeCol { border-right: 1px solid #1f2937; background: #0b1222; }
-.timeTick { position: relative; display: flex; justify-content: flex-end; padding: 0.2rem 0.5rem; box-sizing: border-box; border-bottom: 1px solid rgba(31, 41, 55, 0.45); }
-.timeTick span { color: #94a3b8; font-size: 0.85rem; }
+/* Toolbar */
+.toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-2) 0;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  background: white;
+  padding: var(--space-4);
+  border-radius: var(--radius-xl);
+  box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+  border: 1px solid rgba(0,0,0,0.05);
+}
 
-.days { display: grid; grid-template-columns: repeat(7, 1fr); }
-.dayCol { position: relative; border-right: 1px solid #1f2937; background: linear-gradient(to bottom, rgba(148, 163, 184, 0.06) 1px, transparent 1px); background-size: 100% calc(30px); }
-.dayCol:last-child { border-right: none; }
-.dayCol.today { background-color: rgba(66, 184, 131, 0.06); }
-.hourLine { position: absolute; left: 0; right: 0; height: 1px; background: rgba(148, 163, 184, 0.18); }
+.toolbar-center {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+}
 
-.nowLine { position: absolute; left: 0; right: 0; height: 2px; background: #ef4444; z-index: 3; }
-.nowLabel { position: absolute; left: 6px; top: -10px; font-size: 0.75rem; background: rgba(15, 23, 42, 0.9); border: 1px solid rgba(239, 68, 68, 0.45); color: #fecaca; padding: 0.1rem 0.35rem; border-radius: 999px; }
+.select-wrapper {
+  position: relative;
+  display: inline-block;
+}
+.room-select {
+  min-width: 240px;
+  font-weight: 700;
+  font-size: 1.1rem;
+  padding-right: 2.5rem;
+  appearance: none;
+  background-color: var(--color-bg-secondary);
+  border: 1px solid transparent;
+  padding: 0.6rem 1rem;
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+}
+.room-select:hover {
+  background-color: #e2e8f0;
+}
+.select-arrow {
+  position: absolute;
+  right: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  font-size: 0.7rem;
+  color: var(--color-text-secondary);
+}
 
-.booking { position: absolute; background: rgba(66, 184, 131, 0.18); border: 1px solid rgba(66, 184, 131, 0.45); border-left: 4px solid #42b883; border-radius: 0.5rem; padding: 0.35rem 0.45rem; overflow: hidden; margin: 0 4px; }
-.booking { cursor: pointer; }
-.booking:focus { outline: 2px solid rgba(66, 184, 131, 0.85); outline-offset: 2px; }
-.bookingTime { font-size: 0.8rem; color: #d1fae5; font-weight: 700; }
-.bookingPerson { font-size: 0.85rem; color: #e5e7eb; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+.week-nav {
+  display: flex;
+  background-color: var(--color-bg-secondary);
+  border-radius: var(--radius-full);
+  padding: 4px;
+  border: 1px solid transparent;
+}
 
-.footer { padding: 0.6rem 0.9rem; border-top: 1px solid #1f2937; color: #94a3b8; font-size: 0.9rem; }
+.nav-btn {
+  background: none;
+  border: none;
+  padding: var(--space-2) var(--space-3);
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  border-radius: var(--radius-full);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
 
-.back { color: #94a3b8; width: fit-content; }
+.nav-btn:hover {
+  background-color: white;
+  color: var(--color-primary);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
 
-.modalOverlay { position: fixed; inset: 0; background: rgba(0,0,0,0.55); display: grid; place-items: center; padding: 1rem; z-index: 50; }
-.modal { width: min(720px, 100%); background: #111827; border: 1px solid #1f2937; border-radius: 0.9rem; padding: 1rem; display: grid; gap: 0.75rem; }
-.modalHead { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
-.modalTitle { margin: 0; font-size: 1.1rem; }
-.modalBody { display: grid; gap: 0.6rem; }
-.detailRow { display: grid; grid-template-columns: 160px 1fr; gap: 0.75rem; align-items: start; }
-.detailRow.top { align-items: start; }
-.k { color: #94a3b8; font-size: 0.9rem; }
-.v { color: #e5e7eb; }
-.inp { width: 100%; background: #0b1222; border: 1px solid #243146; color: #e5e7eb; padding: 0.55rem 0.65rem; border-radius: 0.5rem; }
-textarea.inp { resize: vertical; }
-.hint { margin-top: 0.35rem; color: #94a3b8; font-size: 0.8rem; }
-.actions { display: flex; gap: 0.5rem; justify-content: flex-end; flex-wrap: wrap; }
-.btn.primary { background: #42b883; color: #0a0f1e; border: none; font-weight: 700; }
-.btn.danger { background: #ef4444; color: #0a0f1e; border: none; font-weight: 800; }
-.participants { margin: 0.25rem 0 0; padding-left: 1.1rem; }
-.participants li { margin: 0.1rem 0; }
+.today-btn {
+  font-size: 0.9rem;
+}
+
+.current-week-label {
+  font-weight: 600;
+  font-size: 1.1rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-primary);
+}
+
+.btn-booking {
+  border-radius: var(--radius-full);
+  padding: 0.6rem 1.5rem;
+  box-shadow: var(--shadow-md);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+}
+
+.message.is-error {
+  background-color: var(--color-danger-bg);
+  color: var(--color-danger);
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-weight: 500;
+}
+
+/* Calendar Card */
+.calendar-card {
+  flex: 1;
+  background-color: white;
+  border: 1px solid rgba(0,0,0,0.05);
+  border-radius: var(--radius-xl);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: var(--shadow-lg);
+  min-height: 600px;
+}
+
+.calendar-header {
+  display: flex;
+  border-bottom: 1px solid var(--color-border);
+  background-color: #fafafa;
+}
+
+.time-column-header {
+  width: 70px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--color-border);
+}
+
+.day-column-header {
+  flex: 1;
+  text-align: center;
+  padding: var(--space-3) var(--space-2);
+  border-right: 1px solid var(--color-border);
+}
+
+.day-column-header:last-child {
+  border-right: none;
+}
+
+.day-column-header.is-today {
+  background-color: var(--color-primary-light);
+}
+.day-column-header.is-today .dow {
+  color: var(--color-primary);
+}
+.day-column-header.is-today .dom {
+  color: var(--color-primary);
+  font-weight: 700;
+}
+
+.dow {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.25rem;
+}
+
+.dom {
+  font-size: 1.5rem;
+  font-weight: 300;
+  line-height: 1;
+}
+
+.calendar-body-scroll {
+  flex: 1;
+  overflow-y: auto;
+  position: relative;
+  scrollbar-width: thin;
+}
+
+.calendar-body {
+  display: flex;
+  position: relative;
+}
+
+.time-column {
+  width: 70px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--color-border);
+  background-color: #fafafa;
+  position: sticky;
+  left: 0;
+  z-index: 30;
+}
+
+.time-tick {
+  border-bottom: 1px solid transparent; /* Spacer */
+  position: relative;
+}
+
+.time-tick span {
+  position: absolute;
+  top: -10px;
+  left: 0;
+  width: 100%;
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+
+.days-container {
+  flex: 1;
+  display: flex;
+  position: relative;
+}
+
+.day-column {
+  flex: 1;
+  position: relative;
+  border-right: 1px solid var(--color-border);
+}
+
+.day-column:last-child {
+  border-right: none;
+}
+
+.grid-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1px solid var(--color-border);
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+/* Now Line */
+.now-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 2px solid var(--color-danger);
+  z-index: 10;
+  pointer-events: none;
+}
+
+.now-dot {
+  position: absolute;
+  left: -6px;
+  top: -6px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background-color: var(--color-danger);
+  box-shadow: 0 0 0 2px white;
+}
+
+/* Bookings */
+.booking-item {
+  position: absolute;
+  background-color: var(--color-primary);
+  color: white;
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 0.8rem;
+  overflow: hidden;
+  cursor: pointer;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  border: 1px solid rgba(255,255,255,0.2);
+  transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+  z-index: 5;
+}
+
+.booking-item:hover {
+  transform: scale(1.02);
+  z-index: 20;
+  box-shadow: 0 8px 16px rgba(0,0,0,0.15);
+}
+
+.booking-time {
+  font-weight: 800;
+  font-size: 0.75rem;
+  margin-bottom: 2px;
+  opacity: 0.9;
+}
+
+.booking-title {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 500;
+}
+
+/* Modal */
+.modal-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0,0,0,0.4);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  padding: var(--space-4);
+  animation: fadeIn 0.2s ease-out;
+}
+
+.modal {
+  background-color: var(--color-bg-primary);
+  border-radius: var(--radius-xl);
+  width: 100%;
+  max-width: 500px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  animation: popIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes popIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.modal-header {
+  padding: var(--space-6);
+  border-bottom: 1px solid rgba(0,0,0,0.05);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modal-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin-bottom: 0;
+}
+
+.close-btn {
+  background: var(--color-bg-secondary);
+  border: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  font-size: 1rem;
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+.close-btn:hover {
+  background-color: var(--color-danger-bg);
+  color: var(--color-danger);
+}
+
+.modal-body {
+  padding: var(--space-6);
+  overflow-y: auto;
+}
+
+.detail-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+
+.detail-item {
+  display: flex;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: var(--space-3);
+  align-items: center;
+}
+.detail-item .label {
+  color: var(--color-text-secondary);
+  font-weight: 500;
+}
+.detail-item .value {
+  font-weight: 600;
+  text-align: right;
+}
+
+.detail-section {
+  margin-top: var(--space-6);
+}
+.detail-section h3 {
+  font-size: 1rem;
+  margin-bottom: var(--space-3);
+  color: var(--color-text-secondary);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.participant-list {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.participant-list li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2);
+  background: var(--color-bg-accent);
+  border-radius: var(--radius-lg);
+}
+
+.participant-avatar {
+  width: 28px;
+  height: 28px;
+  background-color: white;
+  color: var(--color-primary);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.8rem;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+}
+
+.participant-name {
+  font-weight: 500;
+  font-size: 0.95rem;
+}
+
+.modal-actions {
+  margin-top: var(--space-8);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.btn-text {
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0;
+}
+.text-danger {
+  color: var(--color-danger);
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: var(--space-4);
+}
+
+.form-group {
+  margin-bottom: var(--space-4);
+}
+.form-label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: var(--space-2);
+  color: var(--color-text-secondary);
+  font-size: 0.9rem;
+}
+.form-input {
+  width: 100%;
+  padding: 0.6rem 1rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  transition: all 0.2s;
+}
+.form-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+textarea.form-input {
+  resize: vertical;
+}
+
+.font-mono {
+  font-family: monospace;
+  font-size: 0.9rem;
+}
+
+.form-hint {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  display: block;
+  margin-top: var(--space-1);
+}
+
+/* View Toggle */
+.view-toggle {
+  display: flex;
+  background-color: var(--color-bg-secondary);
+  border-radius: var(--radius-full);
+  padding: 4px;
+  gap: 2px;
+}
+
+.toggle-btn {
+  background: none;
+  border: none;
+  padding: 0.4rem 1rem;
+  border-radius: var(--radius-full);
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.toggle-btn:hover {
+  color: var(--color-text-primary);
+}
+
+.toggle-btn.active {
+  background-color: white;
+  color: var(--color-primary);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+}
+
+/* Table View */
+.table-view {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: white;
+}
+
+.table-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-4);
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.data-table th, .data-table td {
+  padding: var(--space-3) var(--space-4);
+  text-align: left;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.data-table th {
+  position: sticky;
+  top: 0;
+  background-color: #fafafa;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  z-index: 10;
+}
+
+.data-table tr:last-child td {
+  border-bottom: none;
+}
+
+.data-table tr:hover td {
+  background-color: var(--color-bg-accent);
+}
+
+.whitespace-nowrap {
+  white-space: nowrap;
+}
+
+.cell-title {
+  font-weight: 500;
+  color: var(--color-text-primary);
+  max-width: 300px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.empty-state {
+  text-align: center;
+  padding: var(--space-8);
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+.btn-icon {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1.1rem;
+  padding: 4px;
+  border-radius: 4px;
+  opacity: 0.6;
+  transition: all 0.2s;
+}
+.btn-icon:hover {
+  opacity: 1;
+  background-color: var(--color-bg-secondary);
+}
 </style>
+
+
