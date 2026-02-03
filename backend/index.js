@@ -1,6 +1,5 @@
 const express = require('express')
 const mysql = require('mysql2/promise')
-const crypto = require('crypto')
 
 const app = express()
 const PORT = process.env.PORT || 3000
@@ -28,45 +27,6 @@ const DB_CONFIG = {
 
 let pool
 
-const AUTH_SECRET = process.env.AUTH_SECRET || 'dev-secret-change-me'
-
-function hashPassword(password) {
-	const pw = String(password || '')
-	if (!pw) throw new Error('Passwort erforderlich')
-	// scrypt parameters (reasonable defaults)
-	const cost = 16384
-	const blockSize = 8
-	const parallelization = 1
-	const keyLen = 64
-	const salt = crypto.randomBytes(16).toString('base64url')
-	const derived = crypto.scryptSync(pw, salt, keyLen, { cost, blockSize, parallelization })
-	const hash = Buffer.from(derived).toString('base64url')
-	return `scrypt$${cost}$${blockSize}$${parallelization}$${salt}$${hash}`
-}
-
-function verifyPassword(storedHash, password) {
-	try {
-		const pw = String(password || '')
-		if (!pw) return false
-		const parts = String(storedHash || '').split('$')
-		if (parts.length !== 6) return false
-		const [scheme, costStr, blockStr, parStr, salt, hash] = parts
-		if (scheme !== 'scrypt') return false
-		const cost = Number(costStr)
-		const blockSize = Number(blockStr)
-		const parallelization = Number(parStr)
-		if (!Number.isFinite(cost) || !Number.isFinite(blockSize) || !Number.isFinite(parallelization)) return false
-		const keyLen = Buffer.from(String(hash), 'base64url').length
-		if (!keyLen) return false
-		const derived = crypto.scryptSync(pw, salt, keyLen, { cost, blockSize, parallelization })
-		const actual = Buffer.from(derived).toString('base64url')
-		if (actual.length !== String(hash).length) return false
-		return crypto.timingSafeEqual(Buffer.from(actual), Buffer.from(String(hash)))
-	} catch (_) {
-		return false
-	}
-}
-
 async function ensureDefaultDepartmentId(abteilungId) {
 	let deptId = abteilungId
 	if (deptId == null) {
@@ -79,106 +39,6 @@ async function ensureDefaultDepartmentId(abteilungId) {
 		}
 	}
 	return deptId
-}
-
-function base64urlEncode(obj) {
-	return Buffer.from(JSON.stringify(obj), 'utf8').toString('base64url')
-}
-
-function base64urlDecode(str) {
-	return JSON.parse(Buffer.from(String(str), 'base64url').toString('utf8'))
-}
-
-function signToken(payload) {
-	const body = base64urlEncode(payload)
-	const sig = crypto.createHmac('sha256', AUTH_SECRET).update(body).digest('base64url')
-	return `${body}.${sig}`
-}
-
-function verifyToken(token) {
-	const parts = String(token || '').split('.')
-	if (parts.length !== 2) return null
-	const [body, sig] = parts
-	const expected = crypto.createHmac('sha256', AUTH_SECRET).update(body).digest('base64url')
-	if (sig.length !== expected.length) return null
-	if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null
-	const payload = base64urlDecode(body)
-	if (!payload || !payload.uid) return null
-	if (payload.exp && Date.now() > Number(payload.exp)) return null
-	return payload
-}
-
-function getBearerToken(req) {
-	const h = req.header('Authorization') || ''
-	const m = String(h).match(/^Bearer\s+(.+)$/i)
-	return m ? m[1].trim() : null
-}
-
-async function requireAuth(req, res, next) {
-	try {
-		const token = getBearerToken(req)
-		if (!token) return res.status(401).json({ error: 'Nicht eingeloggt' })
-		const payload = verifyToken(token)
-		if (!payload) return res.status(401).json({ error: 'Ungültige Sitzung' })
-		const uid = Number(payload.uid)
-		if (!Number.isFinite(uid)) return res.status(401).json({ error: 'Ungültige Sitzung' })
-
-		const [rows] = await pool.query('SELECT Benutzer_Id AS id FROM Benutzer WHERE Benutzer_Id = ? LIMIT 1', [uid])
-		if (!rows.length) return res.status(401).json({ error: 'Benutzer nicht gefunden' })
-		req.user = { id: uid }
-		next()
-	} catch (err) {
-		console.error('Auth error:', err)
-		return res.status(401).json({ error: 'Nicht autorisiert' })
-	}
-}
-
-async function getUserRoleInfo(userId) {
-	const uid = Number(userId)
-	if (!Number.isFinite(uid)) return null
-	const [rows] = await pool.query(
-		`SELECT b.Benutzer_Id AS id,
-				b.Email AS email,
-				b.Rollen_Id AS rollen_id,
-				r.Name AS rollen_name,
-				r.Prioritaet AS prioritaet
-		 FROM Benutzer b
-		 LEFT JOIN Rollen r ON r.Rollen_Id = b.Rollen_Id
-		 WHERE b.Benutzer_Id = ?
-		 LIMIT 1`,
-		[uid]
-	)
-	return rows.length ? rows[0] : null
-}
-
-function isAdminRole(roleInfo) {
-	if (!roleInfo) return false
-	const rollenId = Number(roleInfo.rollen_id)
-	const rollenName = String(roleInfo.rollen_name || '')
-	const prioritaet = Number(roleInfo.prioritaet)
-	// Support both: explicit ID=1 requirement AND more robust checks by name/priority.
-	if (rollenId === 1) return true
-	if (rollenName.toLowerCase() === 'admin') return true
-	if (Number.isFinite(prioritaet) && prioritaet >= 100) return true
-	return false
-}
-
-async function requireAdmin(req, res, next) {
-	try {
-		const uid = req.user?.id
-		const roleInfo = await getUserRoleInfo(uid)
-		if (!roleInfo) return res.status(401).json({ error: 'Benutzer nicht gefunden' })
-		if (!isAdminRole(roleInfo)) return res.status(403).json({ error: 'Keine Admin-Berechtigung' })
-		req.user.role = {
-			rollen_id: roleInfo.rollen_id,
-			rollen_name: roleInfo.rollen_name,
-			prioritaet: roleInfo.prioritaet,
-		}
-		next()
-	} catch (err) {
-		console.error('Admin auth error:', err)
-		return res.status(500).json({ error: 'Berechtigungsprüfung fehlgeschlagen' })
-	}
 }
 
 async function initDb() {
@@ -199,22 +59,6 @@ async function checkDbConnection() {
 async function getRoomIdByName(name) {
 	const [rows] = await pool.query('SELECT Raum_Id AS id FROM Raum WHERE Bezeichnung = ? LIMIT 1', [name])
 	return rows.length ? rows[0].id : null
-}
-
-// Helper: optional resolve Benutzer by "Vorname Nachname" string
-async function findBenutzerByName(fullName) {
-	if (!fullName) return null
-	const parts = String(fullName).trim().split(/\s+/)
-	let vor = parts[0] || ''
-	let nach = parts.slice(1).join(' ') || ''
-	const [rows] = await pool.query('SELECT Benutzer_Id AS id FROM Benutzer WHERE Vorname = ? AND Nachname = ? LIMIT 1', [vor, nach])
-	if (rows.length) return rows[0].id
-	// Fallback: try Vorname-only match
-	if (vor && !nach) {
-		const [rows2] = await pool.query('SELECT Benutzer_Id AS id FROM Benutzer WHERE Vorname = ? LIMIT 1', [vor])
-		if (rows2.length) return rows2[0].id
-	}
-	return null
 }
 
 // Helper: check time conflict for a room
@@ -270,6 +114,7 @@ function parseParticipantsFromBody(body) {
 // GET /bookings -> list bookings with room and optional person name
 // List rooms
 app.get('/rooms', async (req, res) => {
+    /*
 	try {
 		const [rows] = await pool.query('SELECT Raum_Id AS id, Bezeichnung AS name, Standort, Kapazitaet FROM Raum ORDER BY Bezeichnung ASC')
 		res.json(rows)
@@ -277,25 +122,8 @@ app.get('/rooms', async (req, res) => {
 		console.error('GET /rooms error:', err)
 		res.status(500).json({ error: 'Fehler beim Laden der Räume' })
 	}
-})
-
-// Current user info (server-truth, incl. role)
-app.get('/me', requireAuth, async (req, res) => {
-	try {
-		const info = await getUserRoleInfo(req.user.id)
-		if (!info) return res.status(404).json({ error: 'Benutzer nicht gefunden' })
-		return res.json({
-			benutzer_id: info.id,
-			email: info.email,
-			rollen_id: info.rollen_id,
-			rollen_name: info.rollen_name,
-			prioritaet: info.prioritaet,
-			is_admin: isAdminRole(info),
-		})
-	} catch (err) {
-		console.error('GET /me error:', err)
-		return res.status(500).json({ error: 'Fehler beim Laden des Profils' })
-	}
+    */
+    console.log('GET /rooms called')
 })
 
 app.get('/api/me', requireAuth, async (req, res) => {
@@ -426,13 +254,17 @@ app.delete('/bookings/:id', requireAuth, requireAdmin, deleteBookingHandler)
 app.delete('/api/bookings/:id', requireAuth, requireAdmin, deleteBookingHandler)
 
 app.get('/api/rooms', async (req, res) => {
+    /*
 	try {
+    console.log('GET /api/rooms called')
 		const [rows] = await pool.query('SELECT Raum_Id AS id, Bezeichnung AS name, Standort, Kapazitaet FROM Raum ORDER BY Bezeichnung ASC')
 		res.json(rows)
 	} catch (err) {
 		console.error('GET /api/rooms error:', err)
 		res.status(500).json({ error: 'Fehler beim Laden der Räume' })
 	}
+    */
+    console.log('GET /api/rooms called')
 })
 
 async function searchUsersHandler(req, res) {

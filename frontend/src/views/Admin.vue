@@ -1,14 +1,8 @@
 <script setup>
 import { computed, ref, onMounted, onUnmounted } from 'vue'
-import { getAuth, getToken } from '../lib/auth'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
-const session = ref(getAuth())
-
-function syncSession() {
-  session.value = getAuth()
-}
 
 onMounted(() => {
   window.addEventListener('auth-changed', syncSession)
@@ -35,7 +29,6 @@ const msg = ref('')
 const err = ref('')
 
 function validate() {
-  if (!isLoggedIn.value) return 'Bitte zuerst einloggen.'
   if (!isAdmin.value) return 'Keine Admin-Berechtigung.'
   if (!bezeichnung.value.trim()) return 'Bezeichnung ist erforderlich.'
   if (!standort.value.trim()) return 'Standort ist erforderlich.'

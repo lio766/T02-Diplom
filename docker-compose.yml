@@ -35,7 +35,7 @@ services:
   # Reverse Proxy & Static Webserver (NGINX)
   nginx:
     image: nginx:alpine
-    container_name: agora-nginx
+    restart: unless-stopped
     ports:
       - "80:80"
     volumes:
@@ -48,7 +48,7 @@ services:
 
   keycloak:
     image: quay.io/keycloak/keycloak:26.0.0
-    container_name: agora-keycloak
+    restart: unless-stopped
     ports:
       - "8080:8080"
     command:
@@ -71,7 +71,7 @@ services:
 
       KC_LOG_LEVEL: INFO
     depends_on:
-      mysql:
+      db_kc:
         condition: service_healthy
     secrets:
       - keycloak_db_password

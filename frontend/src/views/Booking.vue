@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref, onMounted, watch, onUnmounted } from 'vue'
-import { getAuth, getToken } from '../lib/auth'
+import { useKeycloak } from '@josempgon/vue-keycloak';
+const { isPending, isAuthenticated, username, userId, keycloak, roles, hasRoles } = useKeycloak();
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
@@ -15,9 +16,6 @@ const participantLoading = ref(false)
 const participantError = ref('')
 const selectedParticipants = ref([])
 const showParticipantDropdown = ref(false)
-
-const session = ref(getAuth())
-const isLoggedIn = computed(() => Boolean(getToken()))
 
 const error = ref('')
 const success = ref('')
@@ -120,7 +118,6 @@ async function loadRooms() {
 }
 
 function validate() {
-  if (!isLoggedIn.value) return 'Bitte zuerst einloggen.'
   if (!roomId.value || !date.value || !start.value || !end.value) return 'Bitte alle Felder ausfüllen.'
   if (end.value <= start.value) return 'Endzeit muss nach der Startzeit liegen.'
   return ''
@@ -129,7 +126,6 @@ function validate() {
 async function submit() {
   error.value = ''
   success.value = ''
-  session.value = getAuth()
   const msg = validate()
   if (msg) { error.value = msg; return }
 
@@ -179,14 +175,9 @@ onMounted(() => { loadRooms() })
   <section class="booking">
     <h1>Raumbuchung</h1>
 
-    <div v-if="!isLoggedIn" class="card gate">
+    <div v-if="!isAuthenticated" class="card gate">
       <p class="msg error">Zum Buchen musst du eingeloggt sein.</p>
       <RouterLink to="/login" class="btn primary">Zum Login</RouterLink>
-    </div>
-
-    <div v-else class="card gate">
-      <p class="msg">Eingeloggt als <strong>{{ session?.user?.email || 'Benutzer' }}</strong></p>
-      <RouterLink to="/calendar" class="btn ghost">Zum Kalender</RouterLink>
     </div>
 
     <form class="card" @submit.prevent="submit">
@@ -248,7 +239,7 @@ onMounted(() => { loadRooms() })
           </div>
         </label>
       </div>
-      <button type="submit" class="btn primary" :disabled="!isLoggedIn">Buchen</button>
+      <button type="submit" class="btn primary" :disabled="!isAuthenticated">Buchen</button>
       <p v-if="error" class="msg error">{{ error }}</p>
       <p v-if="success" class="msg success">{{ success }}</p>
     </form>

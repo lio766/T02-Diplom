@@ -1,6 +1,5 @@
 {
   "dependencies": {
-    "@josempgon/vue-keycloak": "^3.3.2",
-    "keycloak-js": "^26.2.2"
+    "@josempgon/vue-keycloak": "^3.3.2"
   }
 }
