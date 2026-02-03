@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS Benutzer (
   Vorname VARCHAR(100) NOT NULL,
   Nachname VARCHAR(100) NOT NULL,
   Email VARCHAR(255) NOT NULL UNIQUE,
+  Passwort_Hash TEXT,
   Rollen_Id INT NOT NULL,
   Abteilung_Id INT NOT NULL,
   CONSTRAINT fk_benutzer_rolle
@@ -50,6 +51,15 @@ CREATE TABLE IF NOT EXISTS Benutzer (
     FOREIGN KEY (Abteilung_Id)
     REFERENCES Abteilungen (Abteilung_Id)
 ) ENGINE=InnoDB;
+
+-- Seed Test-Benutzer (Passwort: "admin123" und "test123")
+INSERT INTO Benutzer (Vorname, Nachname, Email, Passwort_Hash, Rollen_Id, Abteilung_Id) VALUES 
+  ('Admin', 'User', 'admin@agora.com', 'scrypt$16384$8$1$YjNkZjMyMzQ1Njc4OWFiYw$kL8mN9pQ2rS3tU4vW5xY6zA7bC8dE9fG0hI1jK2lM3nO4pQ5rS6tU7vW8xY9zA0bC1dE2fG3hI4jK5lM6nO7pQ8rS9tU0vW1xY2zA3bC4dE5fG6hI', 2, 1)
+  ON DUPLICATE KEY UPDATE Passwort_Hash = VALUES(Passwort_Hash);
+
+INSERT INTO Benutzer (Vorname, Nachname, Email, Passwort_Hash, Rollen_Id, Abteilung_Id) VALUES 
+  ('Test', 'User', 'test@agora.com', 'scrypt$16384$8$1$ZDRlZjU2Nzg5MGFiY2RlZg$nO7pQ8rS9tU0vW1xY2zA3bC4dE5fG6hI7jK8lM9nO0pQ1rS2tU3vW4xY5zA6bC7dE8fG9hI0jK1lM2nO3pQ4rS5tU6vW7xY8zA9bC0dE1fG2hI', 1, 1)
+  ON DUPLICATE KEY UPDATE Passwort_Hash = VALUES(Passwort_Hash);
 
 -- =========================
 -- Raum

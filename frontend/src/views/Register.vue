@@ -76,60 +76,152 @@ async function submit() {
 </script>
 
 <template>
-  <section class="auth">
-    <h1>Registrieren</h1>
+  <div class="auth-page">
+    <div class="auth-container">
+      <div class="auth-card">
+        <h1 class="auth-title">Registrieren</h1>
 
-    <form @submit.prevent="submit" class="card">
-      <label>
-        Vorname
-        <input v-model="vorname" type="text" placeholder="Max" required />
-      </label>
-      <label>
-        Nachname
-        <input v-model="nachname" type="text" placeholder="Mustermann" required />
-      </label>
-      <label>
-        E-Mail
-        <input v-model="email" type="email" placeholder="you@example.com" required />
-      </label>
-      <label>
-        Passwort
-        <input v-model="password" type="password" placeholder="Passwort" required />
-      </label>
-      <label>
-        Passwort wiederholen
-        <input v-model="password2" type="password" placeholder="Passwort wiederholen" required />
-      </label>
-      <label>
-        Abteilung_Id (optional)
-        <input v-model="abteilungId" type="number" placeholder="optional" />
-      </label>
+        <form @submit.prevent="submit" class="form">
+          <div class="form-group">
+            <label for="vorname" class="form-label">Vorname</label>
+            <input 
+              id="vorname"
+              v-model="vorname" 
+              type="text" 
+              placeholder="Max" 
+              class="form-input"
+              required 
+            />
+          </div>
 
-      <div class="actions">
-        <button type="submit" class="btn primary" :disabled="loading">{{ loading ? 'Registriere…' : 'Registrieren' }}</button>
-        <RouterLink class="btn ghost" to="/login">Zum Login</RouterLink>
+          <div class="form-group">
+            <label for="nachname" class="form-label">Nachname</label>
+            <input 
+              id="nachname"
+              v-model="nachname" 
+              type="text" 
+              placeholder="Mustermann" 
+              class="form-input"
+              required 
+            />
+          </div>
+
+          <div class="form-group">
+            <label for="email" class="form-label">E-Mail</label>
+            <input 
+              id="email"
+              v-model="email" 
+              type="email" 
+              placeholder="ihre@example.com" 
+              class="form-input"
+              required 
+            />
+          </div>
+
+          <div class="form-group">
+            <label for="password" class="form-label">Passwort</label>
+            <input 
+              id="password"
+              v-model="password" 
+              type="password" 
+              placeholder="••••••••" 
+              class="form-input"
+              required 
+            />
+          </div>
+
+          <div class="form-group">
+            <label for="password2" class="form-label">Passwort wiederholen</label>
+            <input 
+              id="password2"
+              v-model="password2" 
+              type="password" 
+              placeholder="••••••••" 
+              class="form-input"
+              required 
+            />
+          </div>
+
+          <div class="form-group">
+            <label for="abteilung" class="form-label">Abteilung (optional)</label>
+            <input 
+              id="abteilung"
+              v-model="abteilungId" 
+              type="number" 
+              placeholder="z.B. 1" 
+              class="form-input"
+            />
+          </div>
+
+          <div v-if="msg || err" class="message" :class="{ 'is-error': err, 'is-success': msg }">
+            <span>{{ msg || err }}</span>
+          </div>
+
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary btn-block" :disabled="loading">
+              {{ loading ? '⏳ Wird registriert…' : 'Registrieren' }}
+            </button>
+            <RouterLink class="btn btn-secondary btn-block" to="/login">Zum Login</RouterLink>
+          </div>
+        </form>
+
+        <RouterLink to="/" class="back-link">← Zurück zur Startseite</RouterLink>
       </div>
-
-      <p v-if="msg" class="msg success">{{ msg }}</p>
-      <p v-if="err" class="msg error">{{ err }}</p>
-    </form>
-
-    <RouterLink to="/" class="back">Zurück zur Startseite</RouterLink>
-  </section>
+    </div>
+  </div>
 </template>
 
 <style scoped>
-.auth { min-height: 70vh; display: grid; place-items: center; color: #e5e7eb; background: #0f172a; padding: 2rem 1rem; }
-h1 { margin-bottom: 1rem; }
-.card { background: #111827; border: 1px solid #1f2937; border-radius: 0.75rem; padding: 1rem; display: grid; gap: 0.75rem; min-width: 320px; }
-label { display: grid; gap: 0.35rem; font-size: 0.9rem; }
-input { background: #0b1222; border: 1px solid #243146; color: #e5e7eb; padding: 0.6rem 0.7rem; border-radius: 0.5rem; }
-.actions { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
-.btn.primary { background: #42b883; color: #0a0f1e; border: none; padding: 0.7rem 1rem; border-radius: 0.6rem; font-weight: 700; cursor: pointer; }
-.btn.primary:disabled { opacity: 0.6; cursor: not-allowed; }
-.btn.ghost { background: transparent; color: #e5e7eb; border: 1px solid #334155; padding: 0.7rem 1rem; border-radius: 0.6rem; font-weight: 600; text-decoration: none; display: inline-grid; place-items: center; }
-.back { margin-top: 0.75rem; display: inline-block; color: #94a3b8; }
-.msg { margin: 0; font-size: 0.9rem; }
-.msg.success { color: #86efac; }
-.msg.error { color: #fca5a5; }
+.auth-page {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: var(--space-8);
+  padding-bottom: var(--space-8);
+}
+
+.auth-container {
+  width: 100%;
+  max-width: 500px; /* Slightly wider for registration form */
+}
+
+.auth-card {
+  background-color: var(--color-bg-primary);
+  padding: var(--space-8);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-md);
+}
+
+.auth-title {
+  text-align: center;
+  margin-bottom: var(--space-6);
+  color: var(--color-text-primary);
+}
+
+.form-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-6);
+}
+
+.btn-block {
+  width: 100%;
+  justify-content: center;
+}
+
+.back-link {
+  display: block;
+  text-align: center;
+  margin-top: var(--space-6);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  text-decoration: none;
+}
+.back-link:hover {
+  color: var(--color-primary);
+}
 </style>
+
+

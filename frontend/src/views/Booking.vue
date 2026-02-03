@@ -176,113 +176,319 @@ onMounted(() => { loadRooms() })
 </script>
 
 <template>
-  <section class="booking">
-    <h1>Raumbuchung</h1>
+  <div class="booking-page">
+    <div class="container-narrow">
+      <header class="page-header">
+        <h1>Raumbuchung</h1>
+        <p>Buchen Sie einen Raum für Ihre Veranstaltung</p>
+      </header>
 
-    <div v-if="!isLoggedIn" class="card gate">
-      <p class="msg error">Zum Buchen musst du eingeloggt sein.</p>
-      <RouterLink to="/login" class="btn primary">Zum Login</RouterLink>
-    </div>
-
-    <div v-else class="card gate">
-      <p class="msg">Eingeloggt als <strong>{{ session?.user?.email || 'Benutzer' }}</strong></p>
-      <RouterLink to="/calendar" class="btn ghost">Zum Kalender</RouterLink>
-    </div>
-
-    <form class="card" @submit.prevent="submit">
-      <div class="grid">
-        <label>
-          Raum
-          <select v-model="roomId">
-            <option v-for="r in rooms" :key="r.id" :value="String(r.id)">{{ r.name || r.Bezeichnung || r.bezeichnung }}</option>
-          </select>
-        </label>
-        <label>
-          Datum
-          <input v-model="date" type="date" />
-        </label>
-        <label>
-          Start
-          <input v-model="start" type="time" />
-        </label>
-        <label>
-          Ende
-          <input v-model="end" type="time" />
-        </label>
-
-        <label class="full">
-          Teilnehmer hinzufügen
-          <div class="combo">
-            <input
-              v-model="participantQuery"
-              type="text"
-              autocomplete="off"
-              placeholder="Name oder E-Mail suchen…"
-              @focus="showParticipantDropdown = Boolean(participantQuery.trim())"
-              @keydown.esc.prevent="showParticipantDropdown = false"
-            />
-
-            <div v-if="showParticipantDropdown" class="dropdown">
-              <div class="ddRow" v-if="participantLoading">Suche…</div>
-              <div class="ddRow error" v-else-if="participantError">{{ participantError }}</div>
-              <button
-                v-for="u in participantResults"
-                :key="u.id"
-                class="ddItem"
-                type="button"
-                :disabled="isAlreadySelected(u)"
-                @click="addParticipant(u)"
-              >
-                <span class="ddMain">{{ labelForUser(u) }}</span>
-                <span class="ddHint" v-if="isAlreadySelected(u)">bereits hinzugefügt</span>
-              </button>
-              <div class="ddRow" v-if="!participantLoading && !participantError && participantResults.length === 0">Keine Treffer</div>
-            </div>
-          </div>
-
-          <div v-if="selectedParticipants.length" class="chips">
-            <div v-for="p in selectedParticipants" :key="p.id" class="chip">
-              <span>{{ labelForUser(p) }}</span>
-              <button type="button" class="chipX" @click="removeParticipant(p.id)">×</button>
-            </div>
-          </div>
-        </label>
+      <!-- Not logged in -->
+      <div v-if="!isLoggedIn" class="card error-state">
+        <div class="error-content">
+          <p class="error-text">Zum Buchen müssen Sie eingeloggt sein.</p>
+          <RouterLink to="/login" class="btn btn-primary">Jetzt anmelden</RouterLink>
+        </div>
       </div>
-      <button type="submit" class="btn primary" :disabled="!isLoggedIn">Buchen</button>
-      <p v-if="error" class="msg error">{{ error }}</p>
-      <p v-if="success" class="msg success">{{ success }}</p>
-    </form>
 
-    <RouterLink to="/" class="back">Zurück zur Startseite</RouterLink>
-  </section>
+      <!-- Logged in info -->
+      <div v-else class="card info-card">
+        <div class="info-content">
+          <span>Eingeloggt als: <strong>{{ session?.user?.email || 'Benutzer' }}</strong></span>
+          <RouterLink to="/calendar" class="text-link">Kalender ansehen →</RouterLink>
+        </div>
+      </div>
+
+      <!-- Booking form -->
+      <form v-if="isLoggedIn" @submit.prevent="submit" class="card booking-form">
+        <div class="form-section">
+          <h2>Details</h2>
+
+          <div class="form-grid">
+            <div class="form-group span-full">
+              <label for="room" class="form-label">Raum <span class="required">*</span></label>
+              <select id="room" v-model="roomId" class="form-input" required>
+                <option value="">-- Raum wählen --</option>
+                <option v-for="r in rooms" :key="r.id" :value="String(r.id)">
+                  {{ r.name || r.Bezeichnung || r.bezeichnung }}
+                </option>
+              </select>
+            </div>
+
+            <div class="form-group span-full">
+              <label for="date" class="form-label">Datum <span class="required">*</span></label>
+              <input id="date" v-model="date" type="date" class="form-input" required />
+            </div>
+
+            <div class="form-group">
+              <label for="start" class="form-label">Startzeit <span class="required">*</span></label>
+              <input id="start" v-model="start" type="time" class="form-input" required />
+            </div>
+
+            <div class="form-group">
+              <label for="end" class="form-label">Endzeit <span class="required">*</span></label>
+              <input id="end" v-model="end" type="time" class="form-input" required />
+            </div>
+          </div>
+        </div>
+
+        <div class="form-separator"></div>
+
+        <div class="form-section">
+          <h2>Teilnehmer</h2>
+          <div class="form-group">
+            <label for="participant" class="form-label">Teilnehmer hinzufügen</label>
+            <div class="participant-input-wrapper">
+              <input
+                id="participant"
+                v-model="participantQuery"
+                type="text"
+                class="form-input"
+                placeholder="Name oder E-Mail suchen…"
+                autocomplete="off"
+                @focus="showParticipantDropdown = Boolean(participantQuery.trim())"
+                @keydown.esc.prevent="showParticipantDropdown = false"
+              />
+              
+              <div v-if="showParticipantDropdown" class="participant-dropdown">
+                <div v-if="participantLoading" class="dropdown-item loading">
+                  ⏳ Suche läuft…
+                </div>
+                <div v-else-if="participantError" class="dropdown-item error">
+                  {{ participantError }}
+                </div>
+                <button
+                  v-for="u in participantResults"
+                  v-else
+                  :key="u.id"
+                  type="button"
+                  class="dropdown-item"
+                  :disabled="isAlreadySelected(u)"
+                  @click="addParticipant(u)"
+                >
+                  <span class="participant-name">{{ labelForUser(u) }}</span>
+                  <span v-if="isAlreadySelected(u)" class="badge-added">Bereits hinzugefügt</span>
+                </button>
+                <div v-if="!participantLoading && !participantError && participantResults.length === 0" class="dropdown-item empty">
+                  Keine Ergebnisse gefunden
+                </div>
+              </div>
+            </div>
+
+            <!-- Selected participants -->
+            <div v-if="selectedParticipants.length" class="selected-participants">
+              <div v-for="p in selectedParticipants" :key="p.id" class="participant-chip">
+                <span>{{ labelForUser(p) }}</span>
+                <button
+                  type="button"
+                  class="chip-remove"
+                  @click.prevent="removeParticipant(p.id)"
+                  title="Entfernen"
+                  aria-label="Teilnehmer entfernen"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Messages -->
+        <div v-if="error" class="message is-error">
+          <p>{{ error }}</p>
+        </div>
+        <div v-if="success" class="message is-success">
+          <p>{{ success }}</p>
+        </div>
+
+        <!-- Submit -->
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary" :disabled="!isLoggedIn">
+            Jetzt buchen
+          </button>
+          <RouterLink to="/" class="btn btn-secondary">
+            Abbrechen
+          </RouterLink>
+        </div>
+      </form>
+    </div>
+  </div>
 </template>
 
 <style scoped>
-.booking { min-height: 70vh; color: #e5e7eb; background: #0f172a; padding: 2rem 1rem; display: grid; gap: 1.5rem; }
-.card { background: #111827; border: 1px solid #1f2937; border-radius: 0.75rem; padding: 1rem; display: grid; gap: 1rem; }
-.card.gate { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap; }
-.grid { display: grid; grid-template-columns: repeat(2, minmax(180px, 1fr)); gap: 0.75rem; }
-label { display: grid; gap: 0.35rem; font-size: 0.9rem; }
-label.full { grid-column: 1 / -1; }
-input { background: #0b1222; border: 1px solid #243146; color: #e5e7eb; padding: 0.6rem 0.7rem; border-radius: 0.5rem; }
-.combo { position: relative; }
-.dropdown { position: absolute; left: 0; right: 0; top: calc(100% + 6px); background: #0b1222; border: 1px solid #243146; border-radius: 0.6rem; overflow: hidden; z-index: 10; max-height: 260px; overflow-y: auto; }
-.ddRow { padding: 0.6rem 0.7rem; color: #94a3b8; font-size: 0.9rem; }
-.ddRow.error { color: #fca5a5; }
-.ddItem { width: 100%; text-align: left; padding: 0.6rem 0.7rem; background: transparent; border: none; border-bottom: 1px solid rgba(36, 49, 70, 0.7); color: #e5e7eb; cursor: pointer; display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; }
-.ddItem:last-child { border-bottom: none; }
-.ddItem:hover { background: rgba(148, 163, 184, 0.08); }
-.ddItem:disabled { opacity: 0.5; cursor: not-allowed; }
-.ddMain { font-weight: 600; }
-.ddHint { color: #94a3b8; font-size: 0.85rem; }
-.chips { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem; }
-.chip { display: inline-flex; align-items: center; gap: 0.5rem; background: rgba(66, 184, 131, 0.12); border: 1px solid rgba(66, 184, 131, 0.35); color: #e5e7eb; padding: 0.35rem 0.55rem; border-radius: 999px; font-size: 0.9rem; }
-.chipX { background: transparent; border: none; color: #e5e7eb; font-size: 1.05rem; line-height: 1; cursor: pointer; padding: 0 0.15rem; }
-.btn.ghost { outline: 1px solid #334155; color: #e5e7eb; background: transparent; padding: 0.7rem 1rem; border-radius: 0.6rem; font-weight: 600; text-decoration: none; width: fit-content; display: inline-grid; place-items: center; }
-.btn.primary { background: #42b883; color: #0a0f1e; border: none; padding: 0.7rem 1rem; border-radius: 0.6rem; font-weight: 600; width: fit-content; }
-.btn.primary:disabled { opacity: 0.5; cursor: not-allowed; }
-.msg { margin: 0; font-size: 0.9rem; }
-.msg.error { color: #fca5a5; }
-.msg.success { color: #86efac; }
-.back { color: #94a3b8; }
+.container-narrow {
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.page-header {
+  text-align: center;
+  margin-bottom: var(--space-8);
+}
+
+.page-header h1 {
+  margin-bottom: var(--space-2);
+}
+
+.page-header p {
+  color: var(--color-text-secondary);
+}
+
+.card {
+  margin-bottom: var(--space-6);
+}
+
+/* Info Card */
+.info-card {
+  padding: var(--space-4);
+  background-color: var(--color-primary-light);
+  border: 1px solid rgba(37, 99, 235, 0.2);
+}
+
+.info-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.text-link {
+  color: var(--color-primary);
+  text-decoration: underline;
+}
+
+/* Form */
+.booking-form {
+  padding: var(--space-8);
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+}
+
+.span-full {
+  grid-column: span 2;
+}
+
+.required {
+  color: var(--color-danger);
+}
+
+.form-separator {
+  height: 1px;
+  background-color: var(--color-border);
+  margin: var(--space-6) 0;
+}
+
+/* Participants */
+.participant-input-wrapper {
+  position: relative;
+}
+
+.participant-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background-color: var(--color-bg-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 10;
+  margin-top: var(--space-1);
+}
+
+.dropdown-item {
+  width: 100%;
+  text-align: left;
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  background: none;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.dropdown-item:hover {
+  background-color: var(--color-bg-secondary);
+}
+
+.dropdown-item:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.badge-added {
+  font-size: 0.75rem;
+  background-color: var(--color-success-bg);
+  color: #166534;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.selected-participants {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.participant-chip {
+  background-color: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 9999px;
+  padding: 4px 12px;
+  font-size: var(--font-size-sm);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.chip-remove {
+  background: none;
+  border: none;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font-size: 0.8rem;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+}
+.chip-remove:hover {
+  background-color: #fee2e2;
+  color: #b91c1c;
+}
+
+.form-actions {
+  display: flex;
+  gap: var(--space-3);
+  justify-content: flex-end;
+}
+
+@media (max-width: 600px) {
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+  .span-full {
+    grid-column: span 1;
+  }
+  .info-content {
+    flex-direction: column;
+    gap: var(--space-2);
+    text-align: center;
+  }
+  .form-actions {
+    flex-direction: column;
+  }
+}
 </style>
+
+
