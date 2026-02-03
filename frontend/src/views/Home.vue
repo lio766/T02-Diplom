@@ -19,6 +19,7 @@ function logout() {
     
     <!-- DASHBOARD VIEW (LOGGED IN) -->
     <template v-if="isLoggedIn">
+      <div class="container">
        <section class="dashboard-header">
           <div class="welcome-text">
              <h1>Willkommen zurück, <span class="highlight">{{ userName }}</span>! 👋</h1>
@@ -53,12 +54,14 @@ function logout() {
              </div>
           </RouterLink>
        </section>
+      </div>
     </template>
 
     <!-- LANDING VIEW (LOGGED OUT) -->
     <template v-else>
       <section class="hero-section">
-        <div class="hero-content">
+        <div class="container hero-grid">
+          <div class="hero-content">
           <div class="badge">Neu: Version 2.0</div>
           <h1 class="hero-title">
             Raummanagement <br>
@@ -83,9 +86,11 @@ function logout() {
            </div>
            <div class="hero-blob"></div>
         </div>
+      </div>
       </section>
 
       <section class="features-section">
+         <div class="container features-grid">
          <div class="feature-item">
             <div class="f-icon">⚡</div>
             <h3>Schnell</h3>
@@ -101,6 +106,7 @@ function logout() {
             <h3>Sicher</h3>
             <p>Rollenbasierte Zugriffsrechte und Datenschutz.</p>
          </div>
+         </div>
       </section>
     </template>
 
@@ -109,14 +115,14 @@ function logout() {
 
 <style scoped>
 .home-page {
-  max-width: 1000px;
-  margin: 0 auto;
+  width: 100%;
 }
 
 /* Dashboard Styles */
 .dashboard-header {
   margin-bottom: var(--space-8);
   text-align: left;
+  padding-top: var(--space-8);
 }
 
 .dashboard-header h1 {
@@ -208,11 +214,16 @@ function logout() {
 
 /* Landing Page Styles */
 .hero-section {
+  width: 100%;
+  padding: var(--space-12) 0;
+  /* background-color: var(--color-bg-secondary); */
+}
+
+.hero-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   align-items: center;
   gap: var(--space-8);
-  padding: var(--space-12) 0;
 }
 
 .badge {
@@ -319,12 +330,17 @@ function logout() {
 
 /* Features */
 .features-section {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: var(--space-8);
+  width: 100%;
   margin-top: var(--space-12);
   border-top: 1px solid var(--color-border);
   padding-top: var(--space-12);
+  padding-bottom: var(--space-12);
+}
+
+.features-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-8);
 }
 
 .feature-item {
@@ -346,7 +362,7 @@ function logout() {
 }
 
 @media (max-width: 768px) {
-  .hero-section {
+  .hero-grid {
     grid-template-columns: 1fr;
     text-align: center;
   }
@@ -356,7 +372,7 @@ function logout() {
   .hero-visual {
     display: none;
   }
-  .features-section {
+  .features-grid {
     grid-template-columns: 1fr;
   }
 }

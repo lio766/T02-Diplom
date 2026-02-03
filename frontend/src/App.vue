@@ -430,9 +430,6 @@ const isAdmin = computed(() => {
 .app-content {
   flex: 1;
   width: 100%;
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: var(--space-8) var(--space-6);
   animation: fadeIn 0.5s ease-out;
 }
 
