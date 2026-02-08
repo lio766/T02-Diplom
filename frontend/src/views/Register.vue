@@ -1,8 +1,10 @@
 <script setup>
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { setAuth } from '../lib/auth'
 
+const { t } = useI18n()
 const router = useRouter()
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
@@ -19,11 +21,11 @@ const msg = ref('')
 const err = ref('')
 
 function validate() {
-  if (!vorname.value || !nachname.value) return 'Vorname und Nachname sind erforderlich.'
-  if (!email.value) return 'E-Mail ist erforderlich.'
-  if (!password.value) return 'Passwort ist erforderlich.'
-  if (password.value.length < 6) return 'Passwort muss mindestens 6 Zeichen lang sein.'
-  if (password.value !== password2.value) return 'Passwörter stimmen nicht überein.'
+  if (!vorname.value || !nachname.value) return t('register.error.namesRequired')
+  if (!email.value) return t('register.error.emailRequired')
+  if (!password.value) return t('register.error.passwordRequired')
+  if (password.value.length < 6) return t('register.error.passwordLength')
+  if (password.value !== password2.value) return t('register.error.passwordMismatch')
   return ''
 }
 
@@ -48,7 +50,7 @@ async function submit() {
     })
 
     const data = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(data.error || 'Registrierung fehlgeschlagen')
+    if (!res.ok) throw new Error(data.error || t('register.error.failed'))
 
     // Auto-login after registration
     setAuth({
@@ -65,7 +67,7 @@ async function submit() {
       },
     })
 
-    msg.value = 'Registrierung erfolgreich. Du bist jetzt als Mitarbeiter eingeloggt.'
+    msg.value = t('register.success')
     setTimeout(() => router.push('/booking'), 300)
   } catch (e) {
     err.value = e.message
@@ -79,11 +81,11 @@ async function submit() {
   <div class="auth-page">
     <div class="auth-container">
       <div class="auth-card">
-        <h1 class="auth-title">Registrieren</h1>
+        <h1 class="auth-title">{{ $t('register.title') }}</h1>
 
         <form @submit.prevent="submit" class="form">
           <div class="form-group">
-            <label for="vorname" class="form-label">Vorname</label>
+            <label for="vorname" class="form-label">{{ $t('register.firstname') }}</label>
             <input 
               id="vorname"
               v-model="vorname" 
@@ -95,7 +97,7 @@ async function submit() {
           </div>
 
           <div class="form-group">
-            <label for="nachname" class="form-label">Nachname</label>
+            <label for="nachname" class="form-label">{{ $t('register.lastname') }}</label>
             <input 
               id="nachname"
               v-model="nachname" 
@@ -107,7 +109,7 @@ async function submit() {
           </div>
 
           <div class="form-group">
-            <label for="email" class="form-label">E-Mail</label>
+            <label for="email" class="form-label">{{ $t('register.email') }}</label>
             <input 
               id="email"
               v-model="email" 
@@ -119,7 +121,7 @@ async function submit() {
           </div>
 
           <div class="form-group">
-            <label for="password" class="form-label">Passwort</label>
+            <label for="password" class="form-label">{{ $t('register.password') }}</label>
             <input 
               id="password"
               v-model="password" 
@@ -131,7 +133,7 @@ async function submit() {
           </div>
 
           <div class="form-group">
-            <label for="password2" class="form-label">Passwort wiederholen</label>
+            <label for="password2" class="form-label">{{ $t('register.passwordRepeat') }}</label>
             <input 
               id="password2"
               v-model="password2" 
@@ -143,7 +145,7 @@ async function submit() {
           </div>
 
           <div class="form-group">
-            <label for="abteilung" class="form-label">Abteilung (optional)</label>
+            <label for="abteilung" class="form-label">{{ $t('register.department') }}</label>
             <input 
               id="abteilung"
               v-model="abteilungId" 
@@ -159,13 +161,13 @@ async function submit() {
 
           <div class="form-actions">
             <button type="submit" class="btn btn-primary btn-block" :disabled="loading">
-              {{ loading ? '⏳ Wird registriert…' : 'Registrieren' }}
+              {{ loading ? $t('register.submitting') : $t('register.submit') }}
             </button>
-            <RouterLink class="btn btn-secondary btn-block" to="/login">Zum Login</RouterLink>
+            <RouterLink class="btn btn-secondary btn-block" to="/login">{{ $t('register.backToLogin') }}</RouterLink>
           </div>
         </form>
 
-        <RouterLink to="/" class="back-link">← Zurück zur Startseite</RouterLink>
+        <RouterLink to="/" class="back-link">{{ $t('login.backHome') }}</RouterLink>
       </div>
     </div>
   </div>

@@ -1,8 +1,10 @@
 <script setup>
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { clearAuth, getAuth, setAuth } from '../lib/auth'
 
+const { t } = useI18n()
 const router = useRouter()
 
 const email = ref('')
@@ -17,8 +19,8 @@ const session = ref(getAuth())
 async function submit() {
   msg.value = ''
   err.value = ''
-  if (!email.value) { err.value = 'Bitte E-Mail angeben.'; return }
-  if (!password.value) { err.value = 'Bitte Passwort angeben.'; return }
+  if (!email.value) { err.value = t('login.error.email'); return }
+  if (!password.value) { err.value = t('login.error.password'); return }
   try {
     const res = await fetch(`${API_BASE}/login`, {
       method: 'POST',
@@ -29,7 +31,7 @@ async function submit() {
       })
     })
     const data = await res.json()
-    if (!res.ok) throw new Error(data.error || 'Login fehlgeschlagen')
+    if (!res.ok) throw new Error(data.error || t('login.error.failed'))
 
     setAuth({
       token: data.token,
@@ -46,7 +48,7 @@ async function submit() {
     })
     session.value = getAuth()
 
-    msg.value = 'Login erfolgreich.'
+    msg.value = t('login.success')
     // Take user to booking by default
     setTimeout(() => {
       router.push('/booking')
@@ -59,7 +61,7 @@ async function submit() {
 function logout() {
   clearAuth()
   session.value = null
-  msg.value = 'Abgemeldet.'
+  msg.value = t('login.loggedOut')
   err.value = ''
 }
 </script>
@@ -68,24 +70,24 @@ function logout() {
   <div class="auth-page">
     <div class="auth-container">
       <div class="auth-card">
-        <h1 class="auth-title">Anmelden</h1>
+        <h1 class="auth-title">{{ $t('login.title') }}</h1>
 
         <!-- Already logged in -->
         <div v-if="session" class="session-box">
           <p class="session-text">
-            Willkommen, <strong>{{ session.user?.email }}</strong>
+            {{ $t('login.welcome') }} <strong>{{ session.user?.email }}</strong>
           </p>
           <div class="session-actions">
-            <RouterLink class="btn btn-primary" to="/booking">Zur Buchung</RouterLink>
-            <RouterLink class="btn btn-outline" to="/calendar">Zum Kalender</RouterLink>
-            <button class="btn btn-danger" type="button" @click="logout">Logout</button>
+            <RouterLink class="btn btn-primary" to="/booking">{{ $t('login.toBooking') }}</RouterLink>
+            <RouterLink class="btn btn-outline" to="/calendar">{{ $t('login.toCalendar') }}</RouterLink>
+            <button class="btn btn-danger" type="button" @click="logout">{{ $t('login.logout') }}</button>
           </div>
         </div>
 
         <!-- Login form -->
         <form v-else @submit.prevent="submit" class="form">
           <div class="form-group">
-            <label for="email" class="form-label">E-Mail</label>
+            <label for="email" class="form-label">{{ $t('login.email') }}</label>
             <input 
               id="email"
               v-model="email" 
@@ -97,7 +99,7 @@ function logout() {
           </div>
 
           <div class="form-group">
-            <label for="password" class="form-label">Passwort</label>
+            <label for="password" class="form-label">{{ $t('login.password') }}</label>
             <input 
               id="password"
               v-model="password" 
@@ -113,12 +115,12 @@ function logout() {
           </div>
 
           <div class="form-actions">
-            <button type="submit" class="btn btn-primary btn-block">Anmelden</button>
-            <RouterLink class="btn btn-secondary btn-block" to="/register">Registrieren</RouterLink>
+            <button type="submit" class="btn btn-primary btn-block">{{ $t('login.submit') }}</button>
+            <RouterLink class="btn btn-secondary btn-block" to="/register">{{ $t('login.register') }}</RouterLink>
           </div>
         </form>
 
-        <RouterLink to="/" class="back-link">← Zurück zur Startseite</RouterLink>
+        <RouterLink to="/" class="back-link">{{ $t('login.backHome') }}</RouterLink>
       </div>
     </div>
   </div>

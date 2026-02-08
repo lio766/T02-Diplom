@@ -1,7 +1,10 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { getAuth, getToken } from '../lib/auth'
 import BookingForm from '../components/BookingForm.vue'
+
+const { t, tm } = useI18n()
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
@@ -56,7 +59,7 @@ const weekLabel = computed(() => {
   return `${pad2(a.getDate())}.${pad2(a.getMonth() + 1)}.${a.getFullYear()} – ${pad2(b.getDate())}.${pad2(b.getMonth() + 1)}.${b.getFullYear()}`
 })
 
-const dayLabels = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']
+const dayLabels = computed(() => tm('days'))
 
 const timeSlots = computed(() => {
   const out = []
@@ -214,7 +217,7 @@ function bookingParticipantsLabel(b) {
   const parts = Array.isArray(b?.participants) ? b.participants : []
   const names = parts.map((p) => p?.name || p?.email).filter(Boolean)
   if (names.length) return names.join(', ')
-  return b?.person || 'Belegt'
+  return b?.person || t('calendar.messages.occupied')
 }
 
 function openDetails(b) {
@@ -254,15 +257,15 @@ async function saveBooking() {
   detailErr.value = ''
   session.value = getAuth()
 
-  if (!selectedBooking.value?.id) { detailErr.value = 'Keine Buchung ausgewählt.'; return }
-  if (!isLoggedIn.value) { detailErr.value = 'Bitte zuerst einloggen.'; return }
-  if (!isAdmin.value) { detailErr.value = 'Keine Admin-Berechtigung.'; return }
+  if (!selectedBooking.value?.id) { detailErr.value = t('calendar.messages.noBookingSelected'); return }
+  if (!isLoggedIn.value) { detailErr.value = t('calendar.messages.loginRequired'); return }
+  if (!isAdmin.value) { detailErr.value = t('calendar.messages.adminRequired'); return }
   if (!editRoomId.value || !editDate.value || !editStart.value || !editEnd.value) {
-    detailErr.value = 'Bitte alle Felder ausfüllen.'
+    detailErr.value = t('calendar.messages.fillAllFields')
     return
   }
   if (editEnd.value <= editStart.value) {
-    detailErr.value = 'Endzeit muss nach der Startzeit liegen.'
+    detailErr.value = t('calendar.messages.endTimeAfterStartTime')
     return
   }
 
@@ -285,19 +288,19 @@ async function saveBooking() {
 
     if (res.status === 204) {
       // shouldn't happen for PUT, but handle gracefully
-      detailMsg.value = 'Gespeichert.'
+      detailMsg.value = t('calendar.messages.saved')
       await loadBookings()
       closeDetails()
       return
     }
 
     const data = await res.json().catch(() => ({}))
-    if (res.status === 401) throw new Error(data.error || 'Bitte zuerst einloggen')
-    if (res.status === 403) throw new Error(data.error || 'Keine Admin-Berechtigung')
-    if (res.status === 409) throw new Error(data.error || 'Zeitfenster belegt')
-    if (!res.ok) throw new Error(data.error || 'Fehler beim Speichern')
+    if (res.status === 401) throw new Error(data.error || t('calendar.messages.loginRequired'))
+    if (res.status === 403) throw new Error(data.error || t('calendar.messages.adminRequired'))
+    if (res.status === 409) throw new Error(data.error || t('calendar.messages.occupied'))
+    if (!res.ok) throw new Error(data.error || t('common.error'))
 
-    detailMsg.value = 'Änderungen gespeichert.'
+    detailMsg.value = t('calendar.messages.changesSaved')
     await loadBookings()
     closeDetails()
   } catch (e) {
@@ -312,11 +315,11 @@ async function deleteBooking() {
   detailErr.value = ''
   session.value = getAuth()
 
-  if (!selectedBooking.value?.id) { detailErr.value = 'Keine Buchung ausgewählt.'; return }
-  if (!isLoggedIn.value) { detailErr.value = 'Bitte zuerst einloggen.'; return }
-  if (!isAdmin.value) { detailErr.value = 'Keine Admin-Berechtigung.'; return }
+  if (!selectedBooking.value?.id) { detailErr.value = t('calendar.messages.noBookingSelected'); return }
+  if (!isLoggedIn.value) { detailErr.value = t('calendar.messages.loginRequired'); return }
+  if (!isAdmin.value) { detailErr.value = t('calendar.messages.adminRequired'); return }
 
-  const ok = window.confirm('Buchung wirklich löschen?')
+  const ok = window.confirm(t('calendar.messages.confirmDelete'))
   if (!ok) return
 
   deleting.value = true
@@ -327,19 +330,19 @@ async function deleteBooking() {
     })
     if (res.status === 401) {
       const data = await res.json().catch(() => ({}))
-      throw new Error(data.error || 'Bitte zuerst einloggen')
+      throw new Error(data.error || t('calendar.messages.loginRequired'))
     }
     if (res.status === 403) {
       const data = await res.json().catch(() => ({}))
-      throw new Error(data.error || 'Keine Admin-Berechtigung')
+      throw new Error(data.error || t('calendar.messages.adminRequired'))
     }
     if (res.status === 404) {
       const data = await res.json().catch(() => ({}))
-      throw new Error(data.error || 'Buchung nicht gefunden')
+      throw new Error(data.error || t('calendar.messages.notFound'))
     }
     if (res.status !== 204 && !res.ok) {
       const data = await res.json().catch(() => ({}))
-      throw new Error(data.error || 'Fehler beim Löschen')
+      throw new Error(data.error || t('calendar.messages.deleteError'))
     }
 
     await loadBookings()
@@ -362,7 +365,7 @@ async function loadRooms() {
   error.value = ''
   try {
     const res = await fetch(`${API_BASE}/rooms`)
-    if (!res.ok) throw new Error('Fehler beim Laden der Räume')
+    if (!res.ok) throw new Error(t('calendar.messages.loadRoomsError'))
     rooms.value = await res.json()
     if (!roomId.value && rooms.value.length) roomId.value = String(rooms.value[0].id)
   } catch (e) {
@@ -388,7 +391,7 @@ async function loadBookings() {
     url.searchParams.set('to', to)
 
     const res = await fetch(url.toString().replace(window.location.origin, ''))
-    if (!res.ok) throw new Error('Fehler beim Laden der Buchungen')
+    if (!res.ok) throw new Error(t('calendar.messages.loadBookingsError'))
     bookings.value = await res.json()
   } catch (e) {
     error.value = e.message
@@ -448,11 +451,11 @@ onMounted(async () => {
 
           <div class="toolbar-center">
             <div class="week-nav">
-               <button class="nav-btn" type="button" @click="prevWeek" aria-label="Vorherige Woche">
+               <button class="nav-btn" type="button" @click="prevWeek" :aria-label="$t('calendar.toolbar.prevWeek')">
                   <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
                </button>
-               <button class="nav-btn today-btn" type="button" @click="goToday">Heute</button>
-               <button class="nav-btn" type="button" @click="nextWeek" aria-label="Nächste Woche">
+               <button class="nav-btn today-btn" type="button" @click="goToday">{{ $t('calendar.toolbar.today') }}</button>
+               <button class="nav-btn" type="button" @click="nextWeek" :aria-label="$t('calendar.toolbar.nextWeek')">
                   <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
                </button>
             </div>
@@ -461,12 +464,13 @@ onMounted(async () => {
 
           <div class="toolbar-group right">
              <div class="view-toggle">
-               <button class="toggle-btn" :class="{ active: currentView === 'calendar' }" @click="currentView = 'calendar'">Kalender</button>
-               <button class="toggle-btn" :class="{ active: currentView === 'table' }" @click="currentView = 'table'">Tabelle</button>
-             </div>
-             <button class="btn btn-primary btn-booking" @click="showBookingPanel = true">
-                <span>+</span> Buchung
+              <button class="btn btn-primary btn-booking" @click="showBookingPanel = true">
+                <span>+</span> {{ $t('calendar.toolbar.booking') }}
              </button>
+               <button class="toggle-btn" :class="{ active: currentView === 'calendar' }" @click="currentView = 'calendar'">{{ $t('calendar.toolbar.calendar') }}</button>
+               <button class="toggle-btn" :class="{ active: currentView === 'table' }" @click="currentView = 'table'">{{ $t('calendar.toolbar.table') }}</button>
+             </div>
+             
           </div>
         </header>
 
@@ -542,10 +546,10 @@ onMounted(async () => {
               <table class="data-table">
                  <thead>
                     <tr>
-                       <th>Datum</th>
-                       <th>Zeit</th>
-                       <th>Raum</th>
-                       <th>Titel / Teilnehmer</th>
+                       <th>{{ $t('calendar.table.date') }}</th>
+                       <th>{{ $t('calendar.table.time') }}</th>
+                       <th>{{ $t('calendar.table.room') }}</th>
+                       <th>{{ $t('calendar.table.title') }}</th>
                        <th style="width: 60px"></th>
                     </tr>
                  </thead>
@@ -554,7 +558,7 @@ onMounted(async () => {
                        <td>{{ toIsoDate(b.date) }}</td>
                        <td class="whitespace-nowrap">{{ b.start_time }} – {{ b.end_time }}</td>
                        <td>
-                          {{ rooms.find(r => String(r.id) === String(b.room_id))?.name || 'Unbekannt' }}
+                          {{ rooms.find(r => String(r.id) === String(b.room_id))?.name || $t('calendar.table.unknownRoom') }}
                        </td>
                        <td>
                           <div class="cell-title" :title="bookingParticipantsLabel(b)">{{ bookingParticipantsLabel(b) }}</div>
@@ -564,7 +568,7 @@ onMounted(async () => {
                        </td>
                     </tr>
                     <tr v-if="sortedBookings.length === 0">
-                       <td colspan="5" class="empty-state">Keine Buchungen gefunden.</td>
+                       <td colspan="5" class="empty-state">{{ $t('calendar.table.empty') }}</td>
                     </tr>
                  </tbody>
               </table>
@@ -587,14 +591,14 @@ onMounted(async () => {
       <div v-if="showDetails" class="modal-backdrop" @click.self="closeDetails">
          <div class="modal" role="dialog" aria-modal="true">
             <header class="modal-header">
-               <h2 class="modal-title">Buchungsdetails</h2>
-               <button class="close-btn" type="button" @click="closeDetails" aria-label="Schließen">✕</button>
+               <h2 class="modal-title">{{ $t('calendar.modal.title') }}</h2>
+               <button class="close-btn" type="button" @click="closeDetails" :aria-label="$t('calendar.modal.close')">✕</button>
             </header>
 
             <div v-if="selectedBooking" class="modal-body">
                <template v-if="isAdmin">
                   <div class="form-group">
-                     <label class="form-label">Raum</label>
+                     <label class="form-label">{{ $t('calendar.modal.room') }}</label>
                      <div class="select-wrapper">
                         <select v-model="editRoomId" class="form-input">
                            <option v-for="r in rooms" :key="r.id" :value="String(r.id)">
@@ -606,30 +610,30 @@ onMounted(async () => {
                   </div>
                   <div class="form-row">
                      <div class="form-group">
-                        <label class="form-label">Datum</label>
+                        <label class="form-label">{{ $t('calendar.modal.date') }}</label>
                         <input v-model="editDate" class="form-input" type="date" />
                      </div>
                      <div class="form-group">
-                        <label class="form-label">Start</label>
+                        <label class="form-label">{{ $t('calendar.modal.start') }}</label>
                         <input v-model="editStart" class="form-input" type="time" />
                      </div>
                      <div class="form-group">
-                        <label class="form-label">Ende</label>
+                        <label class="form-label">{{ $t('calendar.modal.end') }}</label>
                         <input v-model="editEnd" class="form-input" type="time" />
                      </div>
                   </div>
                   <div class="form-group">
-                     <label class="form-label">Teilnehmer (E-Mails)</label>
+                     <label class="form-label">{{ $t('calendar.modal.participants') }}</label>
                      <textarea v-model="editParticipants" class="form-input font-mono" rows="3" placeholder="mail1@example.com, mail2@example.com"></textarea>
-                     <small class="form-hint">Komma/Zeilenumbruch getrennt.</small>
+                     <small class="form-hint">{{ $t('calendar.modal.participantsHint') }}</small>
                   </div>
 
                   <div class="modal-actions">
                      <button class="btn btn-primary" type="button" :disabled="saving || deleting" @click="saveBooking">
-                        {{ saving ? 'Speichern...' : 'Speichern' }}
+                        {{ saving ? $t('calendar.modal.saving') : $t('calendar.modal.save') }}
                      </button>
                      <button class="btn btn-text text-danger" type="button" :disabled="saving || deleting" @click="deleteBooking">
-                        {{ deleting ? 'Löschen...' : 'Löschen' }}
+                        {{ deleting ? $t('calendar.modal.deleting') : $t('calendar.modal.delete') }}
                      </button>
                   </div>
                </template>
@@ -637,25 +641,25 @@ onMounted(async () => {
                <template v-else>
                   <div class="detail-list">
                      <div class="detail-item">
-                        <span class="label">Raum</span>
+                        <span class="label">{{ $t('calendar.modal.room') }}</span>
                         <span class="value">{{ selectedBooking.room || rooms.find(r => String(r.id) === String(selectedBooking.room_id))?.name || '---' }}</span>
                      </div>
                      <div class="detail-item">
-                        <span class="label">Zeitraum</span>
+                        <span class="label">{{ $t('calendar.modal.timeRange') }}</span>
                         <span class="value">{{ toIsoDate(selectedBooking.date) }} <br> {{ selectedBooking.start_time }} – {{ selectedBooking.end_time }}</span>
                      </div>
                   </div>
                </template>
 
                <div class="detail-section">
-                  <h3>Teilnehmer</h3>
+                  <h3>{{ $t('calendar.modal.participantsList') }}</h3>
                   <ul v-if="Array.isArray(selectedBooking.participants) && selectedBooking.participants.length" class="participant-list">
                      <li v-for="p in selectedBooking.participants" :key="p.id">
                         <div class="participant-avatar">{{ (p.name?.[0] || p.email?.[0] || '?').toUpperCase() }}</div>
                         <span class="participant-name">{{ p.name || p.email }}</span>
                      </li>
                   </ul>
-                  <p v-else class="text-muted">Keine Teilnehmer gelistet.</p>
+                  <p v-else class="text-muted">{{ $t('calendar.modal.noParticipants') }}</p>
                </div>
 
                <div v-if="detailMsg" class="message is-success">{{ detailMsg }}</div>
@@ -697,14 +701,14 @@ onMounted(async () => {
 /* Sidebar for Booking */
 .booking-sidebar {
   width: 350px;
-  background-color: white;
+  background-color: var(--color-bg-surface);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-lg);
   overflow: hidden;
   display: flex;
   flex-direction: column;
   animation: slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-  border: 1px solid rgba(0,0,0,0.05);
+  border: 1px solid var(--color-border);
 }
 
 @keyframes slideInRight {
@@ -720,11 +724,11 @@ onMounted(async () => {
   padding: var(--space-2) 0;
   flex-wrap: wrap;
   gap: var(--space-4);
-  background: white;
+  background: var(--color-bg-surface);
   padding: var(--space-4);
   border-radius: var(--radius-xl);
   box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
-  border: 1px solid rgba(0,0,0,0.05);
+  border: 1px solid var(--color-border);
 }
 
 .toolbar-center {
@@ -748,9 +752,10 @@ onMounted(async () => {
   padding: 0.6rem 1rem;
   border-radius: var(--radius-lg);
   cursor: pointer;
+  color: var(--color-text-primary);
 }
 .room-select:hover {
-  background-color: #e2e8f0;
+  background-color: var(--color-bg-accent);
 }
 .select-arrow {
   position: absolute;
@@ -785,7 +790,7 @@ onMounted(async () => {
 }
 
 .nav-btn:hover {
-  background-color: white;
+  background-color: var(--color-bg-surface);
   color: var(--color-primary);
   box-shadow: 0 2px 4px rgba(0,0,0,0.05);
 }
@@ -825,8 +830,8 @@ onMounted(async () => {
 /* Calendar Card */
 .calendar-card {
   flex: 1;
-  background-color: white;
-  border: 1px solid rgba(0,0,0,0.05);
+  background-color: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-xl);
   display: flex;
   flex-direction: column;
@@ -838,7 +843,7 @@ onMounted(async () => {
 .calendar-header {
   display: flex;
   border-bottom: 1px solid var(--color-border);
-  background-color: #fafafa;
+  background-color: var(--color-bg-secondary);
 }
 
 .time-column-header {
@@ -861,6 +866,7 @@ onMounted(async () => {
 .day-column-header.is-today {
   background-color: var(--color-primary-light);
 }
+
 .day-column-header.is-today .dow {
   color: var(--color-primary);
 }
@@ -900,7 +906,7 @@ onMounted(async () => {
   width: 70px;
   flex-shrink: 0;
   border-right: 1px solid var(--color-border);
-  background-color: #fafafa;
+  background-color: var(--color-bg-secondary);
   position: sticky;
   left: 0;
   z-index: 30;
@@ -1130,7 +1136,7 @@ onMounted(async () => {
 .participant-avatar {
   width: 28px;
   height: 28px;
-  background-color: white;
+  background-color: var(--color-bg-primary);
   color: var(--color-primary);
   border-radius: 50%;
   display: flex;
@@ -1236,7 +1242,7 @@ textarea.form-input {
 }
 
 .toggle-btn.active {
-  background-color: white;
+  background-color: var(--color-bg-surface);
   color: var(--color-primary);
   box-shadow: 0 1px 2px rgba(0,0,0,0.1);
 }
@@ -1246,7 +1252,7 @@ textarea.form-input {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: white;
+  background: var(--color-bg-surface);
 }
 
 .table-scroll {
@@ -1270,7 +1276,7 @@ textarea.form-input {
 .data-table th {
   position: sticky;
   top: 0;
-  background-color: #fafafa;
+  background-color: var(--color-bg-secondary);
   font-weight: 700;
   color: var(--color-text-secondary);
   font-size: 0.85rem;

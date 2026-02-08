@@ -1,6 +1,9 @@
 <script setup>
 import { computed, ref, onMounted, watch, onUnmounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { getAuth, getToken } from '../lib/auth'
+
+const { t } = useI18n()
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
@@ -73,8 +76,8 @@ async function searchUsers(q) {
       headers: { 'Authorization': `Bearer ${getToken()}` },
       signal: currentAbort.signal,
     })
-    if (res.status === 401) throw new Error('Bitte zuerst einloggen')
-    if (!res.ok) throw new Error('Fehler beim Laden der Benutzer')
+    if (res.status === 401) throw new Error(t('calendar.messages.loginRequired'))
+    if (!res.ok) throw new Error(t('booking.noResults')) // or generic loading error
     const data = await res.json()
     participantResults.value = Array.isArray(data) ? data : []
   } catch (e) {
@@ -154,15 +157,15 @@ async function submit() {
     })
     if (res.status === 401) {
       const data = await res.json().catch(() => ({}))
-      throw new Error(data.error || 'Bitte zuerst einloggen')
+      throw new Error(data.error || t('calendar.messages.loginRequired'))
     }
     if (res.status === 409) {
       const data = await res.json()
-      throw new Error(data.error || 'Zeitfenster belegt')
+      throw new Error(data.error || t('booking.occupied'))
     }
-    if (!res.ok) throw new Error('Fehler beim Speichern')
+    if (!res.ok) throw new Error(t('booking.saveError'))
 
-    success.value = 'Buchung gespeichert.'
+    success.value = t('booking.success')
     selectedParticipants.value = []
     participantQuery.value = ''
     participantResults.value = []
@@ -179,36 +182,36 @@ onMounted(() => { loadRooms() })
   <div class="booking-page">
     <div class="container-narrow">
       <header class="page-header">
-        <h1>Raumbuchung</h1>
-        <p>Buchen Sie einen Raum für Ihre Veranstaltung</p>
+        <h1>{{ $t('booking.title') }}</h1>
+        <p>{{ $t('booking.subtitle') }}</p>
       </header>
 
       <!-- Not logged in -->
       <div v-if="!isLoggedIn" class="card error-state">
         <div class="error-content">
-          <p class="error-text">Zum Buchen müssen Sie eingeloggt sein.</p>
-          <RouterLink to="/login" class="btn btn-primary">Jetzt anmelden</RouterLink>
+          <p class="error-text">{{ $t('booking.loginRequired') }}</p>
+          <RouterLink to="/login" class="btn btn-primary">{{ $t('booking.loginBtn') }}</RouterLink>
         </div>
       </div>
 
       <!-- Logged in info -->
       <div v-else class="card info-card">
         <div class="info-content">
-          <span>Eingeloggt als: <strong>{{ session?.user?.email || 'Benutzer' }}</strong></span>
-          <RouterLink to="/calendar" class="text-link">Kalender ansehen →</RouterLink>
+          <span>{{ $t('booking.loggedInAs') }} <strong>{{ session?.user?.email || $t('nav.user') }}</strong></span>
+          <RouterLink to="/calendar" class="text-link">{{ $t('booking.viewCalendar') }}</RouterLink>
         </div>
       </div>
 
       <!-- Booking form -->
       <form v-if="isLoggedIn" @submit.prevent="submit" class="card booking-form">
         <div class="form-section">
-          <h2>Details</h2>
+          <h2>{{ $t('booking.details') }}</h2>
 
           <div class="form-grid">
             <div class="form-group span-full">
-              <label for="room" class="form-label">Raum <span class="required">*</span></label>
+              <label for="room" class="form-label">{{ $t('booking.room') }} <span class="required">*</span></label>
               <select id="room" v-model="roomId" class="form-input" required>
-                <option value="">-- Raum wählen --</option>
+                <option value="">{{ $t('booking.selectRoom') }}</option>
                 <option v-for="r in rooms" :key="r.id" :value="String(r.id)">
                   {{ r.name || r.Bezeichnung || r.bezeichnung }}
                 </option>
@@ -216,17 +219,17 @@ onMounted(() => { loadRooms() })
             </div>
 
             <div class="form-group span-full">
-              <label for="date" class="form-label">Datum <span class="required">*</span></label>
+              <label for="date" class="form-label">{{ $t('booking.date') }} <span class="required">*</span></label>
               <input id="date" v-model="date" type="date" class="form-input" required />
             </div>
 
             <div class="form-group">
-              <label for="start" class="form-label">Startzeit <span class="required">*</span></label>
+              <label for="start" class="form-label">{{ $t('booking.startTime') }} <span class="required">*</span></label>
               <input id="start" v-model="start" type="time" class="form-input" required />
             </div>
 
             <div class="form-group">
-              <label for="end" class="form-label">Endzeit <span class="required">*</span></label>
+              <label for="end" class="form-label">{{ $t('booking.endTime') }} <span class="required">*</span></label>
               <input id="end" v-model="end" type="time" class="form-input" required />
             </div>
           </div>
@@ -235,16 +238,16 @@ onMounted(() => { loadRooms() })
         <div class="form-separator"></div>
 
         <div class="form-section">
-          <h2>Teilnehmer</h2>
+          <h2>{{ $t('booking.participantsTitle') }}</h2>
           <div class="form-group">
-            <label for="participant" class="form-label">Teilnehmer hinzufügen</label>
+            <label for="participant" class="form-label">{{ $t('booking.addParticipant') }}</label>
             <div class="participant-input-wrapper">
               <input
                 id="participant"
                 v-model="participantQuery"
                 type="text"
                 class="form-input"
-                placeholder="Name oder E-Mail suchen…"
+                :placeholder="$t('booking.searchPlaceholder')"
                 autocomplete="off"
                 @focus="showParticipantDropdown = Boolean(participantQuery.trim())"
                 @keydown.esc.prevent="showParticipantDropdown = false"
@@ -252,7 +255,7 @@ onMounted(() => { loadRooms() })
               
               <div v-if="showParticipantDropdown" class="participant-dropdown">
                 <div v-if="participantLoading" class="dropdown-item loading">
-                  ⏳ Suche läuft…
+                  {{ $t('booking.searching') }}
                 </div>
                 <div v-else-if="participantError" class="dropdown-item error">
                   {{ participantError }}
@@ -267,10 +270,10 @@ onMounted(() => { loadRooms() })
                   @click="addParticipant(u)"
                 >
                   <span class="participant-name">{{ labelForUser(u) }}</span>
-                  <span v-if="isAlreadySelected(u)" class="badge-added">Bereits hinzugefügt</span>
+                  <span v-if="isAlreadySelected(u)" class="badge-added">{{ $t('booking.alreadyAdded') }}</span>
                 </button>
                 <div v-if="!participantLoading && !participantError && participantResults.length === 0" class="dropdown-item empty">
-                  Keine Ergebnisse gefunden
+                  {{ $t('booking.noResults') }}
                 </div>
               </div>
             </div>
@@ -283,8 +286,8 @@ onMounted(() => { loadRooms() })
                   type="button"
                   class="chip-remove"
                   @click.prevent="removeParticipant(p.id)"
-                  title="Entfernen"
-                  aria-label="Teilnehmer entfernen"
+                  :title="$t('booking.remove')"
+                  :aria-label="$t('booking.removeParticipant')"
                 >
                   ✕
                 </button>

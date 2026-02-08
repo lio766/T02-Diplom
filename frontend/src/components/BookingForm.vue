@@ -273,7 +273,7 @@ async function submit() {
   display: flex;
   flex-direction: column;
   height: 100%;
-  background-color: white;
+  background-color: var(--color-bg-surface);
   border-left: 1px solid var(--color-border);
 }
 
@@ -351,7 +351,7 @@ async function submit() {
 .select-wrapper select {
   width: 100%;
   appearance: none;
-  background-color: white;
+  background-color: var(--color-bg-primary);
   cursor: pointer;
 }
 .select-arrow {
@@ -367,7 +367,7 @@ async function submit() {
 .search-dropdown {
   position: absolute;
   top: 100%; left: 0; right: 0;
-  background: white;
+  background: var(--color-bg-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);

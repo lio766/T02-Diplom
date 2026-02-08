@@ -1,6 +1,9 @@
 <script setup>
 import { computed, ref, onMounted, onUnmounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { getAuth, getToken } from '../lib/auth'
+
+const { t } = useI18n()
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
@@ -35,12 +38,12 @@ const msg = ref('')
 const err = ref('')
 
 function validate() {
-  if (!isLoggedIn.value) return 'Bitte zuerst einloggen.'
-  if (!isAdmin.value) return 'Keine Admin-Berechtigung.'
-  if (!bezeichnung.value.trim()) return 'Bezeichnung ist erforderlich.'
-  if (!standort.value.trim()) return 'Standort ist erforderlich.'
+  if (!isLoggedIn.value) return t('admin.error.noAdmin') // Technically login required first but re-using or new key
+  if (!isAdmin.value) return t('admin.error.noAdmin')
+  if (!bezeichnung.value.trim()) return t('admin.error.required')
+  if (!standort.value.trim()) return t('admin.error.locationRequired')
   const k = Number(kapazitaet.value)
-  if (!Number.isFinite(k) || k <= 0) return 'Kapazität muss > 0 sein.'
+  if (!Number.isFinite(k) || k <= 0) return t('admin.error.capacity')
   return ''
 }
 
@@ -68,11 +71,11 @@ async function submit() {
     })
 
     const data = await res.json().catch(() => ({}))
-    if (res.status === 401) throw new Error(data.error || 'Bitte zuerst einloggen')
-    if (res.status === 403) throw new Error(data.error || 'Keine Admin-Berechtigung')
-    if (!res.ok) throw new Error(data.error || 'Raum konnte nicht angelegt werden')
+    if (res.status === 401) throw new Error(data.error || t('calendar.messages.loginRequired'))
+    if (res.status === 403) throw new Error(data.error || t('admin.error.noAdmin'))
+    if (!res.ok) throw new Error(data.error || t('common.error'))
 
-    msg.value = `Raum erfolgreich angelegt (ID: ${data.id}).`
+    msg.value = `${t('admin.success')} (ID: ${data.id}).`
     bezeichnung.value = ''
     standort.value = ''
     kapazitaet.value = ''
@@ -87,17 +90,17 @@ async function submit() {
 <template>
   <div class="admin-page">
     <header class="page-header">
-      <h1 class="page-title">Admin Dashboard</h1>
-      <p class="page-subtitle">Verwaltung von Räumen und Ressourcen</p>
+      <h1 class="page-title">{{ $t('admin.title') }}</h1>
+      <p class="page-subtitle">{{ $t('admin.subtitle') }}</p>
     </header>
 
     <!-- Error State: Not Logged In -->
     <div v-if="!isLoggedIn" class="card error-state">
       <div class="error-content">
         <div class="error-icon">🔒</div>
-        <h2>Zugriff beschränkt</h2>
-        <p>Du musst eingeloggt sein, um Räume zu verwalten.</p>
-        <RouterLink class="btn btn-primary" to="/login">Zum Login</RouterLink>
+        <h2>{{ $t('admin.accessRestricted') }}</h2>
+        <p>{{ $t('admin.loginRequiredText') }}</p>
+        <RouterLink class="btn btn-primary" to="/login">{{ $t('admin.toLogin') }}</RouterLink>
       </div>
     </div>
 
@@ -105,9 +108,9 @@ async function submit() {
     <div v-else-if="!isAdmin" class="card error-state">
       <div class="error-content">
         <div class="error-icon">🛡️</div>
-        <h2>Keine Berechtigung</h2>
-        <p>Dieser Bereich ist nur für Administratoren zugänglich.</p>
-        <RouterLink class="btn btn-secondary" to="/booking">Zur Buchung</RouterLink>
+        <h2>{{ $t('admin.noPermission') }}</h2>
+        <p>{{ $t('admin.adminOnly') }}</p>
+        <RouterLink class="btn btn-secondary" to="/booking">{{ $t('login.toBooking') }}</RouterLink>
       </div>
     </div>
 
@@ -115,19 +118,19 @@ async function submit() {
     <div v-else class="admin-content">
       <div class="card admin-form-card">
         <div class="card-header">
-          <h2>Neuen Raum hinzufügen</h2>
-          <p>Erfasse die Details für einen neuen Raum.</p>
+          <h2>{{ $t('admin.createRoom') }}</h2>
+          <p>{{ $t('admin.createRoomDesc') }}</p>
         </div>
 
         <form @submit.prevent="submit" class="admin-form">
           <!-- Bezeichnung Field -->
           <div class="form-group">
-            <label for="bez" class="form-label">Bezeichnung <span class="required">*</span></label>
+            <label for="bez" class="form-label">{{ $t('admin.roomName') }} <span class="required">*</span></label>
             <input 
               id="bez" 
               v-model="bezeichnung" 
               type="text" 
-              placeholder="z.B. Meetingraum A"
+              :placeholder="$t('admin.placeholder.roomName')"
               class="form-input"
               required
             />
@@ -136,12 +139,12 @@ async function submit() {
           <div class="form-row">
             <!-- Location Field -->
             <div class="form-group">
-              <label for="loc" class="form-label">Standort <span class="required">*</span></label>
+              <label for="loc" class="form-label">{{ $t('admin.location') }} <span class="required">*</span></label>
               <input 
                 id="loc" 
                 v-model="standort" 
                 type="text" 
-                placeholder="z.B. 1. Stock"
+                :placeholder="$t('admin.placeholder.location')"
                 class="form-input"
                 required
               />
@@ -149,12 +152,12 @@ async function submit() {
 
             <!-- Capacity Field -->
             <div class="form-group">
-              <label for="cap" class="form-label">Kapazität <span class="required">*</span></label>
+              <label for="cap" class="form-label">{{ $t('admin.capacity') }} <span class="required">*</span></label>
               <input 
                 id="cap" 
                 v-model="kapazitaet" 
                 type="number" 
-                placeholder="z.B. 8"
+                :placeholder="$t('admin.placeholder.capacity')"
                 class="form-input"
                 min="1"
                 required
@@ -170,10 +173,10 @@ async function submit() {
           <!-- Actions -->
           <div class="form-actions">
             <button type="submit" class="btn btn-primary" :disabled="loading">
-              {{ loading ? 'Wird gespeichert...' : 'Raum anlegen' }}
+              {{ loading ? $t('admin.submitting') : $t('admin.submit') }}
             </button>
             <button type="button" class="btn btn-secondary" @click="() => { bezeichnung=''; standort=''; kapazitaet=''; msg=''; err=''; }">
-              Zurücksetzen
+              {{ $t('admin.reset') }}
             </button>
           </div>
         </form>

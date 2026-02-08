@@ -1,7 +1,9 @@
 <script setup>
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { getAuth } from '../lib/auth'
 
+const { t } = useI18n()
 const session = computed(() => getAuth())
 const isLoggedIn = computed(() => Boolean(session.value?.user))
 const user = computed(() => session.value?.user)
@@ -22,8 +24,8 @@ function logout() {
       <div class="container">
        <section class="dashboard-header">
           <div class="welcome-text">
-             <h1>Willkommen zurück, <span class="highlight">{{ userName }}</span>! 👋</h1>
-             <p>Was möchten Sie heute erledigen?</p>
+             <h1>{{ $t('home.dashboard.welcome') }} <span class="highlight">{{ userName }}</span>! 👋</h1>
+             <p>{{ $t('home.dashboard.whatToDo') }}</p>
           </div>
        </section>
 
@@ -31,8 +33,8 @@ function logout() {
           <RouterLink to="/booking" class="dash-card primary-card">
              <div class="card-icon">📅</div>
              <div class="card-content">
-                <h3>Raum buchen</h3>
-                <p>Erstellen Sie eine neue Raumbuchung für Ihr Meeting.</p>
+                <h3>{{ $t('home.dashboard.bookRoom') }}</h3>
+                <p>{{ $t('home.dashboard.bookRoomDesc') }}</p>
              </div>
              <div class="card-arrow">→</div>
           </RouterLink>
@@ -40,8 +42,8 @@ function logout() {
           <RouterLink to="/calendar" class="dash-card">
              <div class="card-icon">👀</div>
              <div class="card-content">
-                <h3>Kalenderübersicht</h3>
-                <p>Prüfen Sie Raumverfügbarkeiten in der Wochenansicht.</p>
+                <h3>{{ $t('home.dashboard.calendarOverview') }}</h3>
+                <p>{{ $t('home.dashboard.calendarOverviewDesc') }}</p>
              </div>
           </RouterLink>
 
@@ -49,8 +51,8 @@ function logout() {
           <RouterLink v-if="user?.is_admin || user?.rollen_id === 1" to="/admin" class="dash-card admin-card">
              <div class="card-icon">⚙️</div>
              <div class="card-content">
-                <h3>Verwaltung</h3>
-                <p>Räume und Benutzer verwalten.</p>
+                <h3>{{ $t('home.dashboard.administration') }}</h3>
+                <p>{{ $t('home.dashboard.administrationDesc') }}</p>
              </div>
           </RouterLink>
        </section>
@@ -62,27 +64,26 @@ function logout() {
       <section class="hero-section">
         <div class="container hero-grid">
           <div class="hero-content">
-          <div class="badge">Neu: Version 2.0</div>
+          <div class="badge">{{ $t('home.landing.badge') }}</div>
           <h1 class="hero-title">
-            Raummanagement <br>
-            <span class="text-gradient">einfach & effizient.</span>
+            {{ $t('home.landing.title') }} <br>
+            <span class="text-gradient">{{ $t('home.landing.titleSuffix') }}</span>
           </h1>
           <p class="hero-subtitle">
-            Die moderne Lösung für Schulen und Unternehmen. Verwalten Sie Räume, 
-            organisieren Sie Meetings und behalten Sie den Überblick.
+            {{ $t('home.landing.subtitle') }}
           </p>
           <div class="hero-actions">
-            <RouterLink to="/login" class="btn btn-primary btn-lg">Jetzt starten</RouterLink>
-            <RouterLink to="/register" class="btn btn-text">Kostenlos registrieren →</RouterLink>
+            <RouterLink to="/login" class="btn btn-primary btn-lg">{{ $t('home.landing.ctaStart') }}</RouterLink>
+            <RouterLink to="/register" class="btn btn-text">{{ $t('home.landing.ctaRegister') }}</RouterLink>
           </div>
         </div>
         <div class="hero-visual">
            <div class="floating-card c1">
-              <span>📅 Meetingraum A</span>
+              <span>📅 {{ $t('home.landing.floating.room') }}</span>
               <small>14:00 - 15:30</small>
            </div>
            <div class="floating-card c2">
-              <span>✅ Bestätigt</span>
+              <span>✅ {{ $t('home.landing.floating.confirmed') }}</span>
            </div>
            <div class="hero-blob"></div>
         </div>
@@ -93,18 +94,18 @@ function logout() {
          <div class="container features-grid">
          <div class="feature-item">
             <div class="f-icon">⚡</div>
-            <h3>Schnell</h3>
-            <p>Buchen Sie Räume in Sekunden ohne Papierkram.</p>
+            <h3>{{ $t('home.features.fast') }}</h3>
+            <p>{{ $t('home.features.fastDesc') }}</p>
          </div>
          <div class="feature-item">
             <div class="f-icon">📱</div>
-            <h3>Mobil</h3>
-            <p>Optimiert für Desktop, Tablet und Smartphone.</p>
+            <h3>{{ $t('home.features.mobile') }}</h3>
+            <p>{{ $t('home.features.mobileDesc') }}</p>
          </div>
          <div class="feature-item">
             <div class="f-icon">🔒</div>
-            <h3>Sicher</h3>
-            <p>Rollenbasierte Zugriffsrechte und Datenschutz.</p>
+            <h3>{{ $t('home.features.secure') }}</h3>
+            <p>{{ $t('home.features.secureDesc') }}</p>
          </div>
          </div>
       </section>
@@ -142,7 +143,7 @@ function logout() {
 }
 
 .dash-card {
-  background-color: white;
+  background-color: var(--color-bg-surface);
   border-radius: var(--radius-lg);
   padding: var(--space-6);
   border: 1px solid var(--color-border);
@@ -291,7 +292,7 @@ function logout() {
 
 .floating-card {
   position: absolute;
-  background: white;
+  background: var(--color-bg-primary);
   padding: 1rem 1.5rem;
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
