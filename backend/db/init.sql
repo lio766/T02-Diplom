@@ -82,6 +82,8 @@ CREATE TABLE IF NOT EXISTS Buchungen (
   Status VARCHAR(50) NOT NULL,
   Erstellzeit DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   Prioritaet INT NOT NULL,
+  Name VARCHAR(255) NOT NULL,
+  Beschreibung TEXT,
   CONSTRAINT fk_buchungen_raum
     FOREIGN KEY (Raum_Id)
     REFERENCES Raum (Raum_Id),

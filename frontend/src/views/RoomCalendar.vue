@@ -95,6 +95,8 @@ const editRoomId = ref('')
 const editDate = ref('')
 const editStart = ref('')
 const editEnd = ref('')
+const editName = ref('')
+const editBeschreibung = ref('')
 const editParticipants = ref('')
 
 const saving = ref(false)
@@ -233,11 +235,13 @@ function openDetails(b) {
   selectedBooking.value = b
   showDetails.value = true
 
-  // prefill edit fields (admins)
+  // prefill edit fields (admins and creators)
   editRoomId.value = String(b?.room_id ?? '')
   editDate.value = String(b?.date ?? '')
   editStart.value = String(b?.start_time ?? '')
   editEnd.value = String(b?.end_time ?? '')
+  editName.value = String(b?.name ?? '')
+  editBeschreibung.value = String(b?.beschreibung ?? '')
   const emails = Array.isArray(b?.participants)
     ? b.participants.map((p) => String(p?.email || '').trim()).filter(Boolean)
     : []
@@ -268,7 +272,7 @@ async function saveBooking() {
   if (!selectedBooking.value?.id) { detailErr.value = t('calendar.messages.noBookingSelected'); return }
   if (!isLoggedIn.value) { detailErr.value = t('calendar.messages.loginRequired'); return }
   if (!canEditCurrentBooking.value) { detailErr.value = t('calendar.messages.adminRequired'); return }
-  if (!editRoomId.value || !editDate.value || !editStart.value || !editEnd.value) {
+  if (!editRoomId.value || !editDate.value || !editStart.value || !editEnd.value || !editName.value) {
     detailErr.value = t('calendar.messages.fillAllFields')
     return
   }
@@ -290,6 +294,8 @@ async function saveBooking() {
         date: editDate.value,
         start_time: editStart.value,
         end_time: editEnd.value,
+        name: editName.value,
+        beschreibung: editBeschreibung.value,
         participant_emails: parseEmails(editParticipants.value),
       })
     })
@@ -631,6 +637,14 @@ onMounted(async () => {
                      </div>
                   </div>
                   <div class="form-group">
+                     <label class="form-label">Name / Titel</label>
+                     <input v-model="editName" class="form-input" type="text" placeholder="Name der Buchung" />
+                  </div>
+                  <div class="form-group">
+                     <label class="form-label">Beschreibung</label>
+                     <textarea v-model="editBeschreibung" class="form-input" rows="2" placeholder="Optionale Beschreibung..."></textarea>
+                  </div>
+                  <div class="form-group">
                      <label class="form-label">{{ $t('calendar.modal.participants') }}</label>
                      <textarea v-model="editParticipants" class="form-input font-mono" rows="3" placeholder="mail1@example.com, mail2@example.com"></textarea>
                      <small class="form-hint">{{ $t('calendar.modal.participantsHint') }}</small>
@@ -651,6 +665,14 @@ onMounted(async () => {
                      <div class="detail-item">
                         <span class="label">{{ $t('calendar.modal.room') }}</span>
                         <span class="value">{{ selectedBooking.room || rooms.find(r => String(r.id) === String(selectedBooking.room_id))?.name || '---' }}</span>
+                     </div>
+                     <div class="detail-item">
+                        <span class="label">Name</span>
+                        <span class="value">{{ selectedBooking.name || '---' }}</span>
+                     </div>
+                     <div class="detail-item" v-if="selectedBooking.beschreibung">
+                        <span class="label">Beschreibung</span>
+                        <span class="value">{{ selectedBooking.beschreibung }}</span>
                      </div>
                      <div class="detail-item">
                         <span class="label">{{ $t('calendar.modal.timeRange') }}</span>

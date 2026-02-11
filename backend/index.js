@@ -368,11 +368,11 @@ async function updateBookingHandler(req, res) {
 		const bookingId = Number(req.params.id)
 		if (!Number.isFinite(bookingId)) return res.status(400).json({ error: 'Ungültige Buchungs-ID' })
 
-		const { room_id, date, start_time, end_time } = req.body || {}
+		const { room_id, date, start_time, end_time, name, beschreibung } = req.body || {}
 		const participantEmails = parseParticipantsFromBody(req.body)
 
-		if (!room_id || !date || !start_time || !end_time) {
-			return res.status(400).json({ error: 'Felder room_id, date, start_time, end_time sind erforderlich' })
+		if (!room_id || !date || !start_time || !end_time || !name) {
+			return res.status(400).json({ error: 'Felder room_id, date, start_time, end_time, name sind erforderlich' })
 		}
 
 		const raumId = Number(room_id)
@@ -397,9 +397,11 @@ async function updateBookingHandler(req, res) {
 		const conn = await pool.getConnection()
 		try {
 			await conn.beginTransaction()
+			const nameFinal = String(name || '').trim()
+			const beschreibungFinal = String(beschreibung || '').trim() || null
 			await conn.query(
-				'UPDATE Buchungen SET Raum_Id = ?, Startzeit = ?, Endzeit = ? WHERE Buchung_Id = ?',
-				[raumId, startTs, endTs, bookingId]
+				'UPDATE Buchungen SET Raum_Id = ?, Startzeit = ?, Endzeit = ?, Name = ?, Beschreibung = ? WHERE Buchung_Id = ?',
+				[raumId, startTs, endTs, nameFinal, beschreibungFinal, bookingId]
 			)
 
 			// participants
@@ -533,6 +535,8 @@ app.get('/bookings', async (req, res) => {
 				 DATE_FORMAT(b.Startzeit, '%Y-%m-%d') AS date,
 				 DATE_FORMAT(b.Startzeit, '%H:%i') AS start_time,
 				 DATE_FORMAT(b.Endzeit, '%H:%i') AS end_time,
+				 b.Name AS name,
+				 b.Beschreibung AS beschreibung,
 				 GROUP_CONCAT(DISTINCT CONCAT(
 					 u.Benutzer_Id, '::', COALESCE(u.Email,''), '::',
 					 TRIM(CONCAT(COALESCE(u.Vorname,''), ' ', COALESCE(u.Nachname,'')))
@@ -568,6 +572,8 @@ app.get('/bookings', async (req, res) => {
 				date: r.date,
 				start_time: r.start_time,
 				end_time: r.end_time,
+				name: r.name,
+				beschreibung: r.beschreibung,
 				participants: parts,
 				person: parts.map((p) => p.name || p.email).filter(Boolean).join(', '),
 			}
@@ -617,6 +623,8 @@ app.get('/api/bookings', async (req, res) => {
 				 DATE_FORMAT(b.Startzeit, '%Y-%m-%d') AS date,
 				 DATE_FORMAT(b.Startzeit, '%H:%i') AS start_time,
 				 DATE_FORMAT(b.Endzeit, '%H:%i') AS end_time,
+				 b.Name AS name,
+				 b.Beschreibung AS beschreibung,
 				 GROUP_CONCAT(DISTINCT CONCAT(
 					 u.Benutzer_Id, '::', COALESCE(u.Email,''), '::',
 					 TRIM(CONCAT(COALESCE(u.Vorname,''), ' ', COALESCE(u.Nachname,'')))
@@ -652,6 +660,8 @@ app.get('/api/bookings', async (req, res) => {
 				date: r.date,
 				start_time: r.start_time,
 				end_time: r.end_time,
+				name: r.name,
+				beschreibung: r.beschreibung,
 				participants: parts,
 				person: parts.map((p) => p.name || p.email).filter(Boolean).join(', '),
 			}
@@ -666,12 +676,12 @@ app.get('/api/bookings', async (req, res) => {
 // POST /bookings -> create booking, optional link to Benutzer
 app.post('/bookings', requireAuth, async (req, res) => {
 	try {
-		const { room, room_id, date, start_time, end_time } = req.body || {}
+		const { room, room_id, date, start_time, end_time, name, beschreibung } = req.body || {}
 		const authUserId = req.user.id
 		const participantEmails = parseParticipantsFromBody(req.body)
 
-		if ((!room && !room_id) || !date || !start_time || !end_time) {
-			return res.status(400).json({ error: 'Felder (room oder room_id), date, start_time, end_time sind erforderlich' })
+		if ((!room && !room_id) || !date || !start_time || !end_time || !name) {
+			return res.status(400).json({ error: 'Felder (room oder room_id), date, start_time, end_time, name sind erforderlich' })
 		}
 		// Build MySQL DATETIME strings
 		const startTs = `${date} ${start_time}:00`
@@ -696,13 +706,15 @@ app.post('/bookings', requireAuth, async (req, res) => {
 		// Default values
 		const status = 'Geplant'
 		const prioritaet = 1
+		const nameFinal = String(name || '').trim()
+		const beschreibungFinal = String(beschreibung || '').trim() || null
 
 		const conn = await pool.getConnection()
 		try {
 			await conn.beginTransaction()
 			const [ins] = await conn.query(
-				'INSERT INTO Buchungen (Raum_Id, Startzeit, Endzeit, Status, Prioritaet) VALUES (?, ?, ?, ?, ?)',
-				[raumId, startTs, endTs, status, prioritaet]
+				'INSERT INTO Buchungen (Raum_Id, Startzeit, Endzeit, Status, Prioritaet, Name, Beschreibung) VALUES (?, ?, ?, ?, ?, ?, ?)',
+				[raumId, startTs, endTs, status, prioritaet, nameFinal, beschreibungFinal]
 			)
 			const bookingId = ins.insertId
 
@@ -732,12 +744,12 @@ app.post('/bookings', requireAuth, async (req, res) => {
 
 app.post('/api/bookings', requireAuth, async (req, res) => {
 	try {
-		const { room, room_id, date, start_time, end_time } = req.body || {}
+		const { room, room_id, date, start_time, end_time, name, beschreibung } = req.body || {}
 		const authUserId = req.user.id
 		const participantEmails = parseParticipantsFromBody(req.body)
 
-		if ((!room && !room_id) || !date || !start_time || !end_time) {
-			return res.status(400).json({ error: 'Felder (room oder room_id), date, start_time, end_time sind erforderlich' })
+		if ((!room && !room_id) || !date || !start_time || !end_time || !name) {
+			return res.status(400).json({ error: 'Felder (room oder room_id), date, start_time, end_time, name sind erforderlich' })
 		}
 		const startTs = `${date} ${start_time}:00`
 		const endTs = `${date} ${end_time}:00`
@@ -759,13 +771,15 @@ app.post('/api/bookings', requireAuth, async (req, res) => {
 
 		const status = 'Geplant'
 		const prioritaet = 1
+		const nameFinal = String(name || '').trim()
+		const beschreibungFinal = String(beschreibung || '').trim() || null
 
 		const conn = await pool.getConnection()
 		try {
 			await conn.beginTransaction()
 			const [ins] = await conn.query(
-				'INSERT INTO Buchungen (Raum_Id, Startzeit, Endzeit, Status, Prioritaet) VALUES (?, ?, ?, ?, ?)',
-				[raumId, startTs, endTs, status, prioritaet]
+				'INSERT INTO Buchungen (Raum_Id, Startzeit, Endzeit, Status, Prioritaet, Name, Beschreibung) VALUES (?, ?, ?, ?, ?, ?, ?)',
+				[raumId, startTs, endTs, status, prioritaet, nameFinal, beschreibungFinal]
 			)
 			const bookingId = ins.insertId
 

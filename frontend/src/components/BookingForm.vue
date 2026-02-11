@@ -14,6 +14,8 @@ const roomId = ref('')
 const date = ref('')
 const start = ref('08:00')
 const end = ref('09:00')
+const name = ref('')
+const beschreibung = ref('')
 const participantQuery = ref('')
 const participantResults = ref([])
 const participantLoading = ref(false)
@@ -112,7 +114,7 @@ watch(() => props.rooms, (list) => {
 
 function validate() {
   if (!isLoggedIn.value) return 'Bitte zuerst einloggen.'
-  if (!roomId.value || !date.value || !start.value || !end.value) return 'Bitte alle Felder ausfüllen.'
+  if (!roomId.value || !date.value || !start.value || !end.value || !name.value) return 'Bitte alle erforderlichen Felder ausfüllen.'
   if (end.value <= start.value) return 'Endzeit muss nach der Startzeit liegen.'
   return ''
 }
@@ -140,6 +142,8 @@ async function submit() {
         date: date.value,
         start_time: start.value,
         end_time: end.value,
+        name: name.value,
+        beschreibung: beschreibung.value,
         participant_emails: participants,
       })
     })
@@ -203,6 +207,16 @@ async function submit() {
         <div class="form-group">
            <label class="form-label">Datum</label>
            <input v-model="date" class="form-input" type="date" required />
+        </div>
+
+        <div class="form-group">
+           <label class="form-label">Name / Titel der Buchung</label>
+           <input v-model="name" class="form-input" type="text" placeholder="z.B. Team Meeting" required />
+        </div>
+
+        <div class="form-group">
+           <label class="form-label">Beschreibung</label>
+           <textarea v-model="beschreibung" class="form-input" rows="3" placeholder="Optionale Beschreibung der Buchung..."></textarea>
         </div>
 
         <div class="form-row">
