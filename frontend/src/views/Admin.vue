@@ -24,9 +24,7 @@ onUnmounted(() => {
 const isLoggedIn = computed(() => Boolean(getToken()))
 const isAdmin = computed(() => {
   const u = session.value?.user
-  return Boolean(u?.is_admin)
-    || String(u?.rollen_name || '').toLowerCase() === 'admin'
-    || Number(u?.rollen_id) === 1
+  return Number(u?.rollen_id) === 2
 })
 
 const bezeichnung = ref('')

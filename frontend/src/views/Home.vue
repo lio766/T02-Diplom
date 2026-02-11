@@ -48,7 +48,7 @@ function logout() {
           </RouterLink>
 
           <!-- Admin Card (conditional) -->
-          <RouterLink v-if="user?.is_admin || user?.rollen_id === 1" to="/admin" class="dash-card admin-card">
+          <RouterLink v-if="user?.rollen_id === 2" to="/admin" class="dash-card admin-card">
              <div class="card-icon">⚙️</div>
              <div class="card-content">
                 <h3>{{ $t('home.dashboard.administration') }}</h3>

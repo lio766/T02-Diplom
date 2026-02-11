@@ -78,9 +78,17 @@ const session = ref(getAuth())
 const isLoggedIn = computed(() => Boolean(getToken()))
 const isAdmin = computed(() => {
   const u = session.value?.user
-  return Boolean(u?.is_admin)
-    || String(u?.rollen_name || '').toLowerCase() === 'admin'
-    || Number(u?.rollen_id) === 1
+  return Number(u?.rollen_id) === 2
+})
+
+const canEditCurrentBooking = computed(() => {
+  if (!session.value?.user || !selectedBooking.value) return false
+  const userId = session.value.user.benutzer_id
+  // Admin can edit any booking
+  if (isAdmin.value) return true
+  // User can edit their own booking (if they're a participant)
+  const participants = Array.isArray(selectedBooking.value?.participants) ? selectedBooking.value.participants : []
+  return participants.some(p => Number(p?.id) === Number(userId))
 })
 
 const editRoomId = ref('')
@@ -259,7 +267,7 @@ async function saveBooking() {
 
   if (!selectedBooking.value?.id) { detailErr.value = t('calendar.messages.noBookingSelected'); return }
   if (!isLoggedIn.value) { detailErr.value = t('calendar.messages.loginRequired'); return }
-  if (!isAdmin.value) { detailErr.value = t('calendar.messages.adminRequired'); return }
+  if (!canEditCurrentBooking.value) { detailErr.value = t('calendar.messages.adminRequired'); return }
   if (!editRoomId.value || !editDate.value || !editStart.value || !editEnd.value) {
     detailErr.value = t('calendar.messages.fillAllFields')
     return
@@ -317,7 +325,7 @@ async function deleteBooking() {
 
   if (!selectedBooking.value?.id) { detailErr.value = t('calendar.messages.noBookingSelected'); return }
   if (!isLoggedIn.value) { detailErr.value = t('calendar.messages.loginRequired'); return }
-  if (!isAdmin.value) { detailErr.value = t('calendar.messages.adminRequired'); return }
+  if (!canEditCurrentBooking.value) { detailErr.value = t('calendar.messages.adminRequired'); return }
 
   const ok = window.confirm(t('calendar.messages.confirmDelete'))
   if (!ok) return
@@ -596,7 +604,7 @@ onMounted(async () => {
             </header>
 
             <div v-if="selectedBooking" class="modal-body">
-               <template v-if="isAdmin">
+               <template v-if="canEditCurrentBooking">
                   <div class="form-group">
                      <label class="form-label">{{ $t('calendar.modal.room') }}</label>
                      <div class="select-wrapper">

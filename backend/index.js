@@ -154,12 +154,8 @@ async function getUserRoleInfo(userId) {
 function isAdminRole(roleInfo) {
 	if (!roleInfo) return false
 	const rollenId = Number(roleInfo.rollen_id)
-	const rollenName = String(roleInfo.rollen_name || '')
-	const prioritaet = Number(roleInfo.prioritaet)
-	// Support both: explicit ID=1 requirement AND more robust checks by name/priority.
-	if (rollenId === 1) return true
-	if (rollenName.toLowerCase() === 'admin') return true
-	if (Number.isFinite(prioritaet) && prioritaet >= 100) return true
+	// Only Rollen_Id = 2 is admin
+	if (rollenId === 2) return true
 	return false
 }
 
@@ -177,6 +173,32 @@ async function requireAdmin(req, res, next) {
 		next()
 	} catch (err) {
 		console.error('Admin auth error:', err)
+		return res.status(500).json({ error: 'Berechtigungsprüfung fehlgeschlagen' })
+	}
+}
+
+async function requireAuthForBookingEdit(req, res, next) {
+	try {
+		const uid = req.user?.id
+		const bookingId = Number(req.params.id)
+		if (!Number.isFinite(bookingId)) return res.status(400).json({ error: 'Ungültige Buchungs-ID' })
+		
+		const roleInfo = await getUserRoleInfo(uid)
+		if (!roleInfo) return res.status(401).json({ error: 'Benutzer nicht gefunden' })
+		
+		// Admins (Rollen_Id = 2) can always edit
+		if (isAdminRole(roleInfo)) return next()
+		
+		// Check if user is participant in this booking
+		const [rows] = await pool.query(
+			'SELECT COUNT(*) AS cnt FROM Buchung_Benutzer WHERE Buchung_Id = ? AND Benutzer_Id = ?',
+			[bookingId, uid]
+		)
+		if (!rows[0].cnt) return res.status(403).json({ error: 'Berechtigung verweigert' })
+		
+		next()
+	} catch (err) {
+		console.error('Booking auth error:', err)
 		return res.status(500).json({ error: 'Berechtigungsprüfung fehlgeschlagen' })
 	}
 }
@@ -419,11 +441,11 @@ async function deleteBookingHandler(req, res) {
 	}
 }
 
-// Admin: update/delete bookings
-app.put('/bookings/:id', requireAuth, requireAdmin, updateBookingHandler)
-app.put('/api/bookings/:id', requireAuth, requireAdmin, updateBookingHandler)
-app.delete('/bookings/:id', requireAuth, requireAdmin, deleteBookingHandler)
-app.delete('/api/bookings/:id', requireAuth, requireAdmin, deleteBookingHandler)
+// Update/delete bookings: Admins can edit all, users can edit their own
+app.put('/bookings/:id', requireAuth, requireAuthForBookingEdit, updateBookingHandler)
+app.put('/api/bookings/:id', requireAuth, requireAuthForBookingEdit, updateBookingHandler)
+app.delete('/bookings/:id', requireAuth, requireAuthForBookingEdit, deleteBookingHandler)
+app.delete('/api/bookings/:id', requireAuth, requireAuthForBookingEdit, deleteBookingHandler)
 
 app.get('/api/rooms', async (req, res) => {
 	try {

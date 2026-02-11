@@ -86,9 +86,14 @@ const userInitials = computed(() => {
 
 const isAdmin = computed(() => {
   const u = session.value?.user
-  return Boolean(u?.is_admin)
-    || String(u?.rollen_name || '').toLowerCase() === 'admin'
-    || Number(u?.rollen_id) === 1
+  return Number(u?.rollen_id) === 2
+})
+
+const roleLabel = computed(() => {
+  const u = session.value?.user
+  if (Number(u?.rollen_id) === 2) return 'admin'
+  if (Number(u?.rollen_id) === 1) return 'Mitarbeiter'
+  return ''
 })
 </script>
 
@@ -128,7 +133,7 @@ const isAdmin = computed(() => {
                 <button class="user-trigger" @click="toggleDropdown" :aria-label="$t('nav.openMenu')" :aria-expanded="showDropdown">
                   <div class="user-info-text">
                   <span class="user-name">{{ userDisplay }}</span>
-                  <span class="user-role-label" v-if="isAdmin">{{ $t('nav.admin') }}</span>
+                  <span class="user-role-label" v-if="roleLabel">{{ roleLabel }}</span>
                 </div>
                 <div class="user-avatar">{{ userInitials }}</div>
               </button>
