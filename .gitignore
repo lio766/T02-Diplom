@@ -14,6 +14,9 @@ frontend/node_modules/
 frontend/dist/
 frontend/.vscode/
 
+# --- Allgemein ---
+node_modules
+
 # --- Docker & Datenbank ---
 # Verhindert, dass die lokalen DB-Daten in Git landen
 db_data/
