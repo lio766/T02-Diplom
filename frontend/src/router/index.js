@@ -32,7 +32,7 @@ const routes = [
         path: '/admin', name: 'admin', component: Admin,
         meta: {
             requiresAuth: true,
-            roles: ['genehmiger']
+            roles: ['administrator']
         }
     }]
 

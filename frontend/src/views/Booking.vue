@@ -106,7 +106,7 @@ onUnmounted(() => {
 
 async function loadRooms() {
   try {
-    const res = await fetch(`${API_BASE}/rooms`)
+    const res = await api.PLCHLDR(`/rooms`)
     if (!res.ok) throw new Error('Fehler beim Laden der Räume')
     rooms.value = await res.json()
     if (rooms.value.length && !roomId.value) {
@@ -134,19 +134,12 @@ async function submit() {
     .filter(Boolean)
 
   try {
-    const res = await fetch(`${API_BASE}/bookings`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${getToken()}`,
-      },
-      body: JSON.stringify({
+    const res = await api.post(`/bookings`, {
         room_id: Number(roomId.value),
         date: date.value,
         start_time: start.value,
         end_time: end.value,
         participant_emails: participants,
-      })
     })
     if (res.status === 401) {
       const data = await res.json().catch(() => ({}))

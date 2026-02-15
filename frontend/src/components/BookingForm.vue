@@ -1,14 +1,14 @@
 <script setup>
-import { computed, ref, onMounted, watch, onUnmounted } from 'vue'
-import { getAuth, getToken } from '../lib/auth'
-
+import { computed, ref, onMounted, watch, onUnmounted } from 'vue';
+import { getToken, useKeycloak } from '@josempgon/vue-keycloak';
+import api from '../lib/api.js';
+const { isPending, isAuthenticated, username, userId, keycloak, roles, hasRoles } = useKeycloak();
 const props = defineProps({
   rooms: { type: Array, default: () => [] }
 })
 
 const emit = defineEmits(['booking-created', 'close'])
 
-const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
 const roomId = ref('')
 const date = ref('')
@@ -21,8 +21,7 @@ const participantError = ref('')
 const selectedParticipants = ref([])
 const showParticipantDropdown = ref(false)
 
-const session = ref(getAuth())
-const isLoggedIn = computed(() => Boolean(getToken()))
+const isLoggedIn = computed(() => Boolean(isAuthenticated.value))
 
 const error = ref('')
 const success = ref('')
@@ -63,17 +62,15 @@ async function searchUsers(q) {
   currentAbort = new AbortController()
 
   try {
-    const url = new URL(`${API_BASE}/users`, window.location.origin)
+    const url = new URL(`/users`)
     if (q) url.searchParams.set('q', q)
     url.searchParams.set('limit', '12')
 
-    const res = await fetch(url.toString().replace(window.location.origin, ''), {
-      headers: { 'Authorization': `Bearer ${getToken()}` },
-      signal: currentAbort.signal,
+    const res = await api.get(url, {
     })
     if (res.status === 401) throw new Error('Bitte zuerst einloggen')
     if (!res.ok) throw new Error('Fehler beim Laden der Benutzer')
-    const data = await res.json()
+    const data = await res.data()
     participantResults.value = Array.isArray(data) ? data : []
   } catch (e) {
     if (e?.name === 'AbortError') return
@@ -120,7 +117,6 @@ function validate() {
 async function submit() {
   error.value = ''
   success.value = ''
-  session.value = getAuth()
   const msg = validate()
   if (msg) { error.value = msg; return }
 
@@ -129,19 +125,12 @@ async function submit() {
     .filter(Boolean)
 
   try {
-    const res = await fetch(`${API_BASE}/bookings`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${getToken()}`,
-      },
-      body: JSON.stringify({
+    const res = await api.post(`/bookings`, {
         room_id: Number(roomId.value),
         date: date.value,
         start_time: start.value,
         end_time: end.value,
         participant_emails: participants,
-      })
     })
     if (res.status === 401) {
       const data = await res.json().catch(() => ({}))
@@ -151,8 +140,6 @@ async function submit() {
       const data = await res.json()
       throw new Error(data.error || 'Zeitfenster belegt')
     }
-    if (!res.ok) throw new Error('Fehler beim Speichern')
-
     success.value = 'Buchung gespeichert.'
     // Reset minimal fields
     selectedParticipants.value = []
@@ -182,11 +169,6 @@ async function submit() {
         {{ error }}
       </div>
 
-      <template v-if="!isLoggedIn">
-        <p>Bitte einloggen um zu buchen.</p>
-        <RouterLink to="/login" class="btn btn-primary">Login</RouterLink>
-      </template>
-      
       <form v-else @submit.prevent="submit" class="booking-form">
         <div class="form-group">
           <label class="form-label">Raum</label>

@@ -1,24 +1,10 @@
 <script setup>
 import { computed, ref, onMounted, onUnmounted } from 'vue'
+import api from '../lib/api.js'
+import axios from 'axios'
+import {getToken, useKeycloak } from '@josempgon/vue-keycloak';
+const {decodedToken, isPending, isAuthenticated, error, username, keycloak, hasRoles } = useKeycloak();
 
-const API_BASE = import.meta.env.VITE_API_BASE || '/api'
-
-
-onMounted(() => {
-  window.addEventListener('auth-changed', syncSession)
-})
-
-onUnmounted(() => {
-  window.removeEventListener('auth-changed', syncSession)
-})
-
-const isLoggedIn = computed(() => Boolean(getToken()))
-const isAdmin = computed(() => {
-  const u = session.value?.user
-  return Boolean(u?.is_admin)
-    || String(u?.rollen_name || '').toLowerCase() === 'admin'
-    || Number(u?.rollen_id) === 1
-})
 
 const bezeichnung = ref('')
 const standort = ref('')
@@ -27,9 +13,12 @@ const kapazitaet = ref('')
 const loading = ref(false)
 const msg = ref('')
 const err = ref('')
+if(isAuthenticated.value) {
+  console.log('User authenticated:', username.value)
+}
+
 
 function validate() {
-  if (!isAdmin.value) return 'Keine Admin-Berechtigung.'
   if (!bezeichnung.value.trim()) return 'Bezeichnung ist erforderlich.'
   if (!standort.value.trim()) return 'Standort ist erforderlich.'
   const k = Number(kapazitaet.value)
@@ -40,32 +29,22 @@ function validate() {
 async function submit() {
   msg.value = ''
   err.value = ''
-  syncSession()
 
   const v = validate()
   if (v) { err.value = v; return }
 
   loading.value = true
   try {
-    const res = await fetch(`${API_BASE}/admin/rooms`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${getToken()}`,
-      },
-      body: JSON.stringify({
-        bezeichnung: bezeichnung.value,
-        standort: standort.value,
-        kapazitaet: Number(kapazitaet.value),
-      })
+    api.post('/admin/rooms', {
+      bezeichnung: bezeichnung.value,
+      standort: standort.value,
+      kapazitaet: Number(kapazitaet.value),
+    }).then((response) => {
+      console.log('Raum angelegt:', response.data)
+    }).catch((error) => {
+      console.error('Fehler beim Anlegen des Raums:', error)
+      err.value = 'Fehler beim Anlegen des Raums: ' + (error.response?.data?.message || error.message)
     })
-
-    const data = await res.json().catch(() => ({}))
-    if (res.status === 401) throw new Error(data.error || 'Bitte zuerst einloggen')
-    if (res.status === 403) throw new Error(data.error || 'Keine Admin-Berechtigung')
-    if (!res.ok) throw new Error(data.error || 'Raum konnte nicht angelegt werden')
-
-    msg.value = `Raum erfolgreich angelegt (ID: ${data.id}).`
     bezeichnung.value = ''
     standort.value = ''
     kapazitaet.value = ''
@@ -84,28 +63,8 @@ async function submit() {
       <p class="page-subtitle">Verwaltung von Räumen und Ressourcen</p>
     </header>
 
-    <!-- Error State: Not Logged In -->
-    <div v-if="!isLoggedIn" class="card error-state">
-      <div class="error-content">
-        <div class="error-icon">🔒</div>
-        <h2>Zugriff beschränkt</h2>
-        <p>Du musst eingeloggt sein, um Räume zu verwalten.</p>
-        <RouterLink class="btn btn-primary" to="/login">Zum Login</RouterLink>
-      </div>
-    </div>
-
-    <!-- Error State: No Admin Rights -->
-    <div v-else-if="!isAdmin" class="card error-state">
-      <div class="error-content">
-        <div class="error-icon">🛡️</div>
-        <h2>Keine Berechtigung</h2>
-        <p>Dieser Bereich ist nur für Administratoren zugänglich.</p>
-        <RouterLink class="btn btn-secondary" to="/booking">Zur Buchung</RouterLink>
-      </div>
-    </div>
-
     <!-- Admin Form -->
-    <div v-else class="admin-content">
+    <div class="admin-content">
       <div class="card admin-form-card">
         <div class="card-header">
           <h2>Neuen Raum hinzufügen</h2>

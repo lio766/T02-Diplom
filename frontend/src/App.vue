@@ -1,25 +1,24 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { getAuth, getToken, clearAuth } from './lib/auth'
-
+import { getToken, useKeycloak } from '@josempgon/vue-keycloak';
+const { decodedToken, isPending, isAuthenticated, error, username, keycloak, hasRoles } = useKeycloak();
 const router = useRouter()
-const session = ref(getAuth())
 const showDropdown = ref(false)
 
-function syncSession() {
-  session.value = getAuth()
-}
+onMounted(async () => {
+  if(isAuthenticated.value){
+    console.log('User is authenticated');
+    const token = await getToken();
+    console.log('Initial token:', token);
+  }
+})
 
 onMounted(() => {
-  window.addEventListener('auth-changed', syncSession)
-  window.addEventListener('storage', syncSession)
   document.addEventListener('click', closeDropdown)
 })
 
 onUnmounted(() => {
-  window.removeEventListener('auth-changed', syncSession)
-  window.removeEventListener('storage', syncSession)
   document.removeEventListener('click', closeDropdown)
 })
 
@@ -33,39 +32,32 @@ function toggleDropdown() {
   showDropdown.value = !showDropdown.value
 }
 
-function handleLogout() {
-  clearAuth()
-  showDropdown.value = false
-  router.push('/login')
-}
-
-const isLoggedIn = computed(() => Boolean(session.value?.token))
+const isLoggedIn = computed(() => {
+  return isAuthenticated.value
+})
 
 const userDisplay = computed(() => {
-  const u = session.value?.user
-  if (!u) return 'Gast'
-  if (u.vorname && u.nachname) return `${u.vorname} ${u.nachname}`
-  return u.email || 'Benutzer'
+  return decodedToken.value?.name || username;
 })
 
 const userInitials = computed(() => {
-  const u = session.value?.user
-  if (!u) return 'G'
-  if (u.vorname && u.nachname) {
-    return (u.vorname[0] + u.nachname[0]).toUpperCase()
-  }
-  const email = u.email || ''
-  return email.substring(0, 2).toUpperCase() || 'U'
+    let name = String(userDisplay.value) || '';
+    return name.split(' ').map(n => n[0]).join('').toUpperCase();
+})
+
+const userEmail = computed(() => {
+    return decodedToken.value?.email || '';
 })
 
 const isAdmin = computed(() => {
-  const u = session.value?.user
-  return Boolean(u?.is_admin)
-    || String(u?.rollen_name || '').toLowerCase() === 'admin'
-    || Number(u?.rollen_id) === 1
+    console.log('Is Admin:', hasRoles(['administrator']));
+    return hasRoles(['administrator']);
 })
-import { useKeycloak } from '@josempgon/vue-keycloak';
-const { isPending, isAuthenticated, error, username, userId, keycloak, roles, hasRoles } = useKeycloak();
+
+const isGenehmiger = computed(() => {
+    console.log('Is Genehmiger:', hasRoles(['genehmiger']));
+    return hasRoles(['genehmiger']);
+})
 
 </script>
 
@@ -87,18 +79,14 @@ const { isPending, isAuthenticated, error, username, userId, keycloak, roles, ha
              <RouterLink v-if="isAdmin" to="/admin" class="nav-link admin-link" active-class="is-active">Admin</RouterLink>
           </div>
   
-          <!-- Right Side: Auth / Profile -->
           <div class="auth-nav">
-            <template v-if="!isLoggedIn">
-               <RouterLink to="/login" class="nav-btn-ghost">Anmelden</RouterLink>
-               <RouterLink to="/register" class="nav-btn-primary">Konto erstellen</RouterLink>
-            </template>
   
-            <div v-else class="user-menu" ref="userMenuRef">
+            <div class="user-menu" ref="userMenuRef">
               <button class="user-trigger" @click="toggleDropdown" aria-label="Benutzermenü öffnen" :aria-expanded="showDropdown">
                 <div class="user-info-text">
                   <span class="user-name">{{ userDisplay }}</span>
                   <span class="user-role-label" v-if="isAdmin">Admin</span>
+                  <span class="user-role-label" v-if="isGenehmiger">Genehmiger</span>
                 </div>
                 <div class="user-avatar">{{ userInitials }}</div>
               </button>
@@ -109,11 +97,11 @@ const { isPending, isAuthenticated, error, username, userId, keycloak, roles, ha
                       <div class="dropdown-avatar-large">{{ userInitials }}</div>
                       <div class="dropdown-info">
                          <span class="dropdown-name">{{ userDisplay }}</span>
-                         <span class="dropdown-email" v-if="session?.user?.email">{{ session.user.email }}</span>
+                         <span class="dropdown-email">{{ userEmail }}</span>
                       </div>
                    </div>
                    <div class="dropdown-divider"></div>
-                   <button @click="handleLogout" class="dropdown-item text-danger">
+                   <button @click="keycloak.logout" class="dropdown-item text-danger">
                       <span>🚪</span> Abmelden
                    </button>
                 </div>
