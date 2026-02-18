@@ -5,6 +5,7 @@ import { getToken, useKeycloak } from '@josempgon/vue-keycloak';
 const { decodedToken, isPending, isAuthenticated, error, username, keycloak, hasRoles } = useKeycloak();
 const router = useRouter()
 const showDropdown = ref(false)
+const isDark = ref(localStorage.getItem('theme') === 'dark')
 
 onMounted(async () => {
   if(isAuthenticated.value){
@@ -14,8 +15,31 @@ onMounted(async () => {
   }
 })
 
+function toggleDarkMode() {
+  isDark.value = !isDark.value
+  updateTheme()
+}
+
+function updateTheme() {
+  const html = document.documentElement
+  if (isDark.value) {
+    html.classList.add('dark-mode')
+    localStorage.setItem('theme', 'dark')
+  } else {
+    html.classList.remove('dark-mode')
+    localStorage.setItem('theme', 'light')
+  }
+}
+
+function toggleLanguage() {
+  const newLang = locale.value === 'de' ? 'en' : 'de'
+  locale.value = newLang
+  localStorage.setItem('lang', newLang)
+}
+
 onMounted(() => {
   document.addEventListener('click', closeDropdown)
+  updateTheme()
 })
 
 onUnmounted(() => {
@@ -67,26 +91,36 @@ const isGenehmiger = computed(() => {
       <div class="navbar-wrapper">
         <RouterLink to="/" class="navbar-brand">
           <div class="brand-logo">🏛️</div>
-          <span class="brand-text">AGORA</span>
+          <span class="brand-text">{{ $t('nav.brand') }}</span>
         </RouterLink>
         
         <!-- Private Navigation -->
         <div class="nav-wrapper-inner">
           <div class="main-nav" v-if="isLoggedIn">
-             <RouterLink to="/" class="nav-link" active-class="is-active" exact>Dashboard</RouterLink>
-             <RouterLink to="/booking" class="nav-link" active-class="is-active">Buchen</RouterLink>
-             <RouterLink to="/calendar" class="nav-link" active-class="is-active">Kalender</RouterLink>
-             <RouterLink v-if="isAdmin" to="/admin" class="nav-link admin-link" active-class="is-active">Admin</RouterLink>
+             <RouterLink to="/" class="nav-link" active-class="is-active" exact>{{ $t('nav.dashboard') }}</RouterLink>
+             <RouterLink to="/booking" class="nav-link" active-class="is-active">{{ $t('nav.booking') }}</RouterLink>
+             <RouterLink to="/calendar" class="nav-link" active-class="is-active">{{ $t('nav.calendar') }}</RouterLink>
+             <RouterLink v-if="isAdmin" to="/admin" class="nav-link admin-link" active-class="is-active">{{ $t('nav.admin') }}</RouterLink>
           </div>
   
           <div class="auth-nav">
+            <template v-if="!isLoggedIn">
+               <RouterLink to="/login" class="nav-btn-ghost">{{ $t('nav.login') }}</RouterLink>
+               <RouterLink to="/register" class="nav-btn-primary">{{ $t('nav.register') }}</RouterLink>
+            </template>
   
-            <div class="user-menu" ref="userMenuRef">
-              <button class="user-trigger" @click="toggleDropdown" aria-label="Benutzermenü öffnen" :aria-expanded="showDropdown">
-                <div class="user-info-text">
+            <template v-else>
+              <button class="theme-toggle-btn" @click="toggleLanguage" :title="$t('lang.toggle')">
+                {{ locale === 'de' ? '🇩🇪' : '🇺🇸' }}
+              </button>
+              <button class="theme-toggle-btn" @click="toggleDarkMode" :title="isDark ? $t('theme.light') : $t('theme.dark')">
+                {{ isDark ? '🌙' : '☀️' }}
+              </button>
+              <div class="user-menu" ref="userMenuRef">
+                <button class="user-trigger" @click="toggleDropdown" :aria-label="$t('nav.openMenu')" :aria-expanded="showDropdown">
+                  <div class="user-info-text">
                   <span class="user-name">{{ userDisplay }}</span>
-                  <span class="user-role-label" v-if="isAdmin">Admin</span>
-                  <span class="user-role-label" v-if="isGenehmiger">Genehmiger</span>
+                  <span class="user-role-label" v-if="roleLabel">{{ roleLabel }}</span>
                 </div>
                 <div class="user-avatar">{{ userInitials }}</div>
               </button>
@@ -102,11 +136,12 @@ const isGenehmiger = computed(() => {
                    </div>
                    <div class="dropdown-divider"></div>
                    <button @click="keycloak.logout" class="dropdown-item text-danger">
-                      <span>🚪</span> Abmelden
+                      <span>🚪</span> {{ $t('nav.logout') }}
                    </button>
                 </div>
               </Transition>
             </div>
+            </template>
           </div>
         </div>
       </div>
@@ -135,9 +170,9 @@ const isGenehmiger = computed(() => {
   position: sticky;
   top: 0;
   z-index: 1000;
-  background-color: rgba(255, 255, 255, 0.85);
+  background-color: var(--navbar-bg);
   backdrop-filter: blur(12px);
-  border-bottom: 1px solid rgba(0,0,0,0.05);
+  border-bottom: 1px solid var(--color-border);
   transition: all 0.3s ease;
 }
 
@@ -208,12 +243,12 @@ const isGenehmiger = computed(() => {
 
 .nav-link:hover {
   color: var(--color-text-primary);
-  background-color: rgba(255,255,255,0.5);
+  background-color: var(--color-bg-accent);
 }
 
 .nav-link.is-active {
   color: var(--color-primary);
-  background-color: white;
+  background-color: var(--color-bg-surface);
   box-shadow: 0 1px 3px rgba(0,0,0,0.05);
 }
 
@@ -226,6 +261,27 @@ const isGenehmiger = computed(() => {
   align-items: center;
   gap: var(--space-4);
   margin-left: auto;
+}
+
+.theme-toggle-btn {
+  background: transparent;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+  font-size: 1.2rem;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  margin-right: 0.5rem;
+}
+
+.theme-toggle-btn:hover {
+  background-color: var(--color-bg-accent);
+  transform: scale(1.1);
 }
 
 /* Auth Buttons */
@@ -267,7 +323,7 @@ const isGenehmiger = computed(() => {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  background: white;
+  background: var(--color-bg-surface);
   border: 1px solid var(--color-border);
   cursor: pointer;
   padding: 4px 4px 4px 16px;
@@ -321,10 +377,10 @@ const isGenehmiger = computed(() => {
   top: 120%;
   right: 0;
   width: 260px;
-  background-color: white;
+  background-color: var(--color-bg-surface);
   border-radius: var(--radius-xl);
   box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
-  border: 1px solid rgba(0,0,0,0.05);
+  border: 1px solid var(--color-border);
   padding: var(--space-2);
   z-index: 2000;
   transform-origin: top right;
@@ -353,7 +409,7 @@ const isGenehmiger = computed(() => {
 .dropdown-avatar-large {
   width: 48px;
   height: 48px;
-  background: white;
+  background: var(--color-bg-surface);
   color: var(--color-text-primary);
   border-radius: 50%;
   display: flex;

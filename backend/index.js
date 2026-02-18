@@ -63,6 +63,22 @@ async function getRoomIdByName(name) {
     return rows.length ? rows[0].id : null
 }
 
+// Helper: optional resolve Benutzer by "Vorname Nachname" string
+async function findBenutzerByName(fullName) {
+	if (!fullName) return null
+	const parts = String(fullName).trim().split(/\s+/)
+	let vor = parts[0] || ''
+	let nach = parts.slice(1).join(' ') || ''
+	const [rows] = await pool.query('SELECT Benutzer_Id AS id FROM Benutzer WHERE Vorname = ? AND Nachname = ? LIMIT 1', [vor, nach])
+	if (rows.length) return rows[0].id
+	// Fallback: try Vorname-only match
+	if (vor && !nach) {
+		const [rows2] = await pool.query('SELECT Benutzer_Id AS id FROM Benutzer WHERE Vorname = ? LIMIT 1', [vor])
+		if (rows2.length) return rows2[0].id
+	}
+	return null
+}
+
 // Helper: check time conflict for a room
 async function hasConflict(raumId, startTs, endTs) {
     const [rows] = await pool.query(
@@ -173,12 +189,12 @@ async function updateBookingHandler(req, res) {
         const bookingId = Number(req.params.id)
         if (!Number.isFinite(bookingId)) return res.status(400).json({ error: 'Ungültige Buchungs-ID' })
 
-        const { room_id, date, start_time, end_time } = req.body || {}
-        const participantEmails = parseParticipantsFromBody(req.body)
+		const { room_id, date, start_time, end_time, name, beschreibung } = req.body || {}
+		const participantEmails = parseParticipantsFromBody(req.body)
 
-        if (!room_id || !date || !start_time || !end_time) {
-            return res.status(400).json({ error: 'Felder room_id, date, start_time, end_time sind erforderlich' })
-        }
+		if (!room_id || !date || !start_time || !end_time || !name) {
+			return res.status(400).json({ error: 'Felder room_id, date, start_time, end_time, name sind erforderlich' })
+		}
 
         const raumId = Number(room_id)
         if (!Number.isFinite(raumId)) return res.status(400).json({ error: 'Ungültige room_id' })
@@ -199,13 +215,15 @@ async function updateBookingHandler(req, res) {
             return res.status(409).json({ error: 'Zeitfenster belegt' })
         }
 
-        const conn = await pool.getConnection()
-        try {
-            await conn.beginTransaction()
-            await conn.query(
-                'UPDATE Buchungen SET Raum_Id = ?, Startzeit = ?, Endzeit = ? WHERE Buchung_Id = ?',
-                [raumId, startTs, endTs, bookingId]
-            )
+		const conn = await pool.getConnection()
+		try {
+			await conn.beginTransaction()
+			const nameFinal = String(name || '').trim()
+			const beschreibungFinal = String(beschreibung || '').trim() || null
+			await conn.query(
+				'UPDATE Buchungen SET Raum_Id = ?, Startzeit = ?, Endzeit = ?, Name = ?, Beschreibung = ? WHERE Buchung_Id = ?',
+				[raumId, startTs, endTs, nameFinal, beschreibungFinal, bookingId]
+			)
 
             // participants
             await conn.query('DELETE FROM Buchung_Benutzer WHERE Buchung_Id = ?', [bookingId])
@@ -342,6 +360,8 @@ app.get('/bookings', async (req, res) => {
 				 DATE_FORMAT(b.Startzeit, '%Y-%m-%d') AS date,
 				 DATE_FORMAT(b.Startzeit, '%H:%i') AS start_time,
 				 DATE_FORMAT(b.Endzeit, '%H:%i') AS end_time,
+				 b.Name AS name,
+				 b.Beschreibung AS beschreibung,
 				 GROUP_CONCAT(DISTINCT CONCAT(
 					 u.Benutzer_Id, '::', COALESCE(u.Email,''), '::',
 					 TRIM(CONCAT(COALESCE(u.Vorname,''), ' ', COALESCE(u.Nachname,'')))
@@ -353,39 +373,41 @@ app.get('/bookings', async (req, res) => {
 			 ${whereSql}
 			 GROUP BY b.Buchung_Id
 			 ORDER BY b.Startzeit DESC`,
-            params
-        )
-        const data = rows.map((r) => {
-            const parts = String(r.participants_raw || '')
-                .split('||')
-                .map((x) => x.trim())
-                .filter(Boolean)
-                .map((x) => {
-                    const [idStr, email, name] = x.split('::')
-                    const id = Number(idStr)
-                    return {
-                        id: Number.isFinite(id) ? id : null,
-                        email: email || '',
-                        name: (name || '').trim(),
-                    }
-                })
-                .filter((p) => p.id != null)
-            return {
-                id: r.id,
-                room_id: r.room_id,
-                room: r.room,
-                date: r.date,
-                start_time: r.start_time,
-                end_time: r.end_time,
-                participants: parts,
-                person: parts.map((p) => p.name || p.email).filter(Boolean).join(', '),
-            }
-        })
-        res.json(data)
-    } catch (err) {
-        console.error('GET /bookings error:', err)
-        res.status(500).json({ error: 'Fehler beim Laden der Buchungen' })
-    }
+			params
+		)
+		const data = rows.map((r) => {
+			const parts = String(r.participants_raw || '')
+				.split('||')
+				.map((x) => x.trim())
+				.filter(Boolean)
+				.map((x) => {
+					const [idStr, email, name] = x.split('::')
+					const id = Number(idStr)
+					return {
+						id: Number.isFinite(id) ? id : null,
+						email: email || '',
+						name: (name || '').trim(),
+					}
+				})
+				.filter((p) => p.id != null)
+			return {
+				id: r.id,
+				room_id: r.room_id,
+				room: r.room,
+				date: r.date,
+				start_time: r.start_time,
+				end_time: r.end_time,
+				name: r.name,
+				beschreibung: r.beschreibung,
+				participants: parts,
+				person: parts.map((p) => p.name || p.email).filter(Boolean).join(', '),
+			}
+		})
+		res.json(data)
+	} catch (err) {
+		console.error('GET /bookings error:', err)
+		res.status(500).json({ error: 'Fehler beim Laden der Buchungen' })
+	}
 })
 
 app.get('/api/bookings', async (req, res) => {
@@ -426,6 +448,8 @@ app.get('/api/bookings', async (req, res) => {
 				 DATE_FORMAT(b.Startzeit, '%Y-%m-%d') AS date,
 				 DATE_FORMAT(b.Startzeit, '%H:%i') AS start_time,
 				 DATE_FORMAT(b.Endzeit, '%H:%i') AS end_time,
+				 b.Name AS name,
+				 b.Beschreibung AS beschreibung,
 				 GROUP_CONCAT(DISTINCT CONCAT(
 					 u.Benutzer_Id, '::', COALESCE(u.Email,''), '::',
 					 TRIM(CONCAT(COALESCE(u.Vorname,''), ' ', COALESCE(u.Nachname,'')))
@@ -437,39 +461,41 @@ app.get('/api/bookings', async (req, res) => {
 			 ${whereSql}
 			 GROUP BY b.Buchung_Id
 			 ORDER BY b.Startzeit DESC`,
-            params
-        )
-        const data = rows.map((r) => {
-            const parts = String(r.participants_raw || '')
-                .split('||')
-                .map((x) => x.trim())
-                .filter(Boolean)
-                .map((x) => {
-                    const [idStr, email, name] = x.split('::')
-                    const id = Number(idStr)
-                    return {
-                        id: Number.isFinite(id) ? id : null,
-                        email: email || '',
-                        name: (name || '').trim(),
-                    }
-                })
-                .filter((p) => p.id != null)
-            return {
-                id: r.id,
-                room_id: r.room_id,
-                room: r.room,
-                date: r.date,
-                start_time: r.start_time,
-                end_time: r.end_time,
-                participants: parts,
-                person: parts.map((p) => p.name || p.email).filter(Boolean).join(', '),
-            }
-        })
-        res.json(data)
-    } catch (err) {
-        console.error('GET /api/bookings error:', err)
-        res.status(500).json({ error: 'Fehler beim Laden der Buchungen' })
-    }
+			params
+		)
+		const data = rows.map((r) => {
+			const parts = String(r.participants_raw || '')
+				.split('||')
+				.map((x) => x.trim())
+				.filter(Boolean)
+				.map((x) => {
+					const [idStr, email, name] = x.split('::')
+					const id = Number(idStr)
+					return {
+						id: Number.isFinite(id) ? id : null,
+						email: email || '',
+						name: (name || '').trim(),
+					}
+				})
+				.filter((p) => p.id != null)
+			return {
+				id: r.id,
+				room_id: r.room_id,
+				room: r.room,
+				date: r.date,
+				start_time: r.start_time,
+				end_time: r.end_time,
+				name: r.name,
+				beschreibung: r.beschreibung,
+				participants: parts,
+				person: parts.map((p) => p.name || p.email).filter(Boolean).join(', '),
+			}
+		})
+		res.json(data)
+	} catch (err) {
+		console.error('GET /api/bookings error:', err)
+		res.status(500).json({ error: 'Fehler beim Laden der Buchungen' })
+	}
 })
 
 // POST /bookings -> create booking, optional link to Benutzer
@@ -479,15 +505,15 @@ app.post('/bookings', authenticate, async (req, res) => {
         const authUserId = req.user.id
         const participantEmails = parseParticipantsFromBody(req.body)
 
-        if ((!room && !room_id) || !date || !start_time || !end_time) {
-            return res.status(400).json({ error: 'Felder (room oder room_id), date, start_time, end_time sind erforderlich' })
-        }
-        // Build MySQL DATETIME strings
-        const startTs = `${date} ${start_time}:00`
-        const endTs = `${date} ${end_time}:00`
-        if (endTs <= startTs) {
-            return res.status(400).json({ error: 'Endzeit muss nach der Startzeit liegen.' })
-        }
+		if ((!room && !room_id) || !date || !start_time || !end_time || !name) {
+			return res.status(400).json({ error: 'Felder (room oder room_id), date, start_time, end_time, name sind erforderlich' })
+		}
+		// Build MySQL DATETIME strings
+		const startTs = `${date} ${start_time}:00`
+		const endTs = `${date} ${end_time}:00`
+		if (endTs <= startTs) {
+			return res.status(400).json({ error: 'Endzeit muss nach der Startzeit liegen.' })
+		}
 
         let raumId = room_id
         if (!raumId) {
@@ -502,18 +528,20 @@ app.post('/bookings', authenticate, async (req, res) => {
             return res.status(409).json({ error: 'Zeitfenster belegt' })
         }
 
-        // Default values
-        const status = 'Geplant'
-        const prioritaet = 1
+		// Default values
+		const status = 'Geplant'
+		const prioritaet = 1
+		const nameFinal = String(name || '').trim()
+		const beschreibungFinal = String(beschreibung || '').trim() || null
 
-        const conn = await pool.getConnection()
-        try {
-            await conn.beginTransaction()
-            const [ins] = await conn.query(
-                'INSERT INTO Buchungen (Raum_Id, Startzeit, Endzeit, Status, Prioritaet) VALUES (?, ?, ?, ?, ?)',
-                [raumId, startTs, endTs, status, prioritaet]
-            )
-            const bookingId = ins.insertId
+		const conn = await pool.getConnection()
+		try {
+			await conn.beginTransaction()
+			const [ins] = await conn.query(
+				'INSERT INTO Buchungen (Raum_Id, Startzeit, Endzeit, Status, Prioritaet, Name, Beschreibung) VALUES (?, ?, ?, ?, ?, ?, ?)',
+				[raumId, startTs, endTs, status, prioritaet, nameFinal, beschreibungFinal]
+			)
+			const bookingId = ins.insertId
 
             const { users, unknown } = await resolveUserIdsByEmails(participantEmails)
             if (unknown.length) {
@@ -539,20 +567,20 @@ app.post('/bookings', authenticate, async (req, res) => {
     }
 })
 
-app.post('/api/bookings', authenticate, async (req, res) => {
-    try {
-        const { room, room_id, date, start_time, end_time } = req.body || {}
-        const authUserId = req.user.id
-        const participantEmails = parseParticipantsFromBody(req.body)
+app.post('/api/bookings', requireAuth, async (req, res) => {
+	try {
+		const { room, room_id, date, start_time, end_time, name, beschreibung } = req.body || {}
+		const authUserId = req.user.id
+		const participantEmails = parseParticipantsFromBody(req.body)
 
-        if ((!room && !room_id) || !date || !start_time || !end_time) {
-            return res.status(400).json({ error: 'Felder (room oder room_id), date, start_time, end_time sind erforderlich' })
-        }
-        const startTs = `${date} ${start_time}:00`
-        const endTs = `${date} ${end_time}:00`
-        if (endTs <= startTs) {
-            return res.status(400).json({ error: 'Endzeit muss nach der Startzeit liegen.' })
-        }
+		if ((!room && !room_id) || !date || !start_time || !end_time || !name) {
+			return res.status(400).json({ error: 'Felder (room oder room_id), date, start_time, end_time, name sind erforderlich' })
+		}
+		const startTs = `${date} ${start_time}:00`
+		const endTs = `${date} ${end_time}:00`
+		if (endTs <= startTs) {
+			return res.status(400).json({ error: 'Endzeit muss nach der Startzeit liegen.' })
+		}
 
         let raumId = room_id
         if (!raumId) {
@@ -566,17 +594,19 @@ app.post('/api/bookings', authenticate, async (req, res) => {
             return res.status(409).json({ error: 'Zeitfenster belegt' })
         }
 
-        const status = 'Geplant'
-        const prioritaet = 1
+		const status = 'Geplant'
+		const prioritaet = 1
+		const nameFinal = String(name || '').trim()
+		const beschreibungFinal = String(beschreibung || '').trim() || null
 
-        const conn = await pool.getConnection()
-        try {
-            await conn.beginTransaction()
-            const [ins] = await conn.query(
-                'INSERT INTO Buchungen (Raum_Id, Startzeit, Endzeit, Status, Prioritaet) VALUES (?, ?, ?, ?, ?)',
-                [raumId, startTs, endTs, status, prioritaet]
-            )
-            const bookingId = ins.insertId
+		const conn = await pool.getConnection()
+		try {
+			await conn.beginTransaction()
+			const [ins] = await conn.query(
+				'INSERT INTO Buchungen (Raum_Id, Startzeit, Endzeit, Status, Prioritaet, Name, Beschreibung) VALUES (?, ?, ?, ?, ?, ?, ?)',
+				[raumId, startTs, endTs, status, prioritaet, nameFinal, beschreibungFinal]
+			)
+			const bookingId = ins.insertId
 
             const { users, unknown } = await resolveUserIdsByEmails(participantEmails)
             if (unknown.length) {

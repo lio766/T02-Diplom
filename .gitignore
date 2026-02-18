@@ -23,3 +23,27 @@ db_data/
 
 # --- Betriebssystem ---
 .DS_Store
+
+# Dependency directories
+**/node_modules/
+**/jspm_packages/
+
+# Build-Dateien (Vite/Frontend)
+frontend/dist/
+*.log
+
+# IDE & OS Files
+.DS_Store
+.vscode/
+*.code-workspace
+.idea/
+Thumbs.db
+
+# Secrets & Environment (SEHR WICHTIG)
+**/secrets/
+.env
+.env.*
+!.env.example
+
+# Docker / Local backups
+*.swp
