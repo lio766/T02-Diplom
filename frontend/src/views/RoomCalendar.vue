@@ -276,7 +276,7 @@ async function saveBooking() {
 
   saving.value = true
   try {
-    const response = await api.post(`/bookings/${selectedBooking.value.id}`, {
+    const res = await api.post(`/bookings/${selectedBooking.value.id}`, {
         room_id: Number(editRoomId.value),
         date: editDate.value,
         start_time: editStart.value,
@@ -294,7 +294,7 @@ async function saveBooking() {
       return
     }
 
-    const data = await res.json().catch(() => ({}))
+    const data = await res.data.catch(() => ({}))
     if (res.status === 401) throw new Error(data.error || t('calendar.messages.loginRequired'))
     if (res.status === 403) throw new Error(data.error || t('calendar.messages.adminRequired'))
     if (res.status === 409) throw new Error(data.error || t('calendar.messages.occupied'))

@@ -42,8 +42,12 @@ const initRouter = () => {
         routes
     })
 
-    router.beforeEach((to) => {
-        const { isAuthenticated, hasRoles, keycloak } = useKeycloak()
+    router.beforeEach(async (to) => {
+        const { isPending, hasRoles, keycloak } = useKeycloak()
+
+        while (isPending.value) {
+            await new Promise(resolve => setTimeout(resolve, 50))
+        }
 
         if (to.meta.roles && !hasRoles(to.meta.roles)) {
             return { path: '/' }
