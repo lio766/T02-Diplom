@@ -1,6 +1,8 @@
 # --- Eigene Umgebungsvariablen & Passwörter ---
 .env
 *.env
+secrets/
+node_modules
 
 # --- Backend (Node/Express) ---
 backend/node_modules/
@@ -11,6 +13,9 @@ backend/npm-debug.log*
 frontend/node_modules/
 frontend/dist/
 frontend/.vscode/
+
+# --- Allgemein ---
+node_modules
 
 # --- Docker & Datenbank ---
 # Verhindert, dass die lokalen DB-Daten in Git landen

@@ -1,19 +1,14 @@
 <script setup>
-import { computed } from 'vue'
+import { computed } from 'vue';
+import {getToken, useKeycloak } from '@josempgon/vue-keycloak';
 import { useI18n } from 'vue-i18n'
-import { getAuth } from '../lib/auth'
+const {decodedToken, isPending, isAuthenticated, error, username, keycloak, hasRoles } = useKeycloak();
+const isLoggedIn = computed(() => isAuthenticated.value);
+console.log(decodedToken.value);
+const userName = computed(() => decodedToken.value.name);
+console.log('Aktueller Benutzer:', username.value);
+console.log('Decoded Token:', decodedToken);
 
-const { t } = useI18n()
-const session = computed(() => getAuth())
-const isLoggedIn = computed(() => Boolean(session.value?.user))
-const user = computed(() => session.value?.user)
-const userName = computed(() => user.value?.vorname || user.value?.email || 'Benutzer')
-
-function logout() {
-  localStorage.removeItem('agora_auth')
-  window.dispatchEvent(new Event('auth-changed'))
-  window.location.reload()
-}
 </script>
 
 <template>

@@ -1,31 +1,15 @@
 <script setup>
 import { computed, ref, onMounted, onUnmounted } from 'vue'
+import api from '../lib/api.js'
+import axios from 'axios'
+import {getToken, useKeycloak } from '@josempgon/vue-keycloak';
+const {decodedToken, isPending, isAuthenticated, error, username, keycloak, hasRoles } = useKeycloak();
 import { useI18n } from 'vue-i18n'
-import { getAuth, getToken } from '../lib/auth'
 
 const { t } = useI18n()
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
-const session = ref(getAuth())
-
-function syncSession() {
-  session.value = getAuth()
-}
-
-onMounted(() => {
-  window.addEventListener('auth-changed', syncSession)
-})
-
-onUnmounted(() => {
-  window.removeEventListener('auth-changed', syncSession)
-})
-
-const isLoggedIn = computed(() => Boolean(getToken()))
-const isAdmin = computed(() => {
-  const u = session.value?.user
-  return Number(u?.rollen_id) === 2
-})
 
 const bezeichnung = ref('')
 const standort = ref('')
@@ -35,9 +19,19 @@ const loading = ref(false)
 const msg = ref('')
 const err = ref('')
 
+const isLoggedIn = computed(() => isAuthenticated.value)
+const isAdmin = computed(() => {
+ hasRoles(['administrator']) 
+})
+
+if(isAuthenticated.value) {
+  console.log('User authenticated:', username.value)
+}
+
+
 function validate() {
   if (!isLoggedIn.value) return t('admin.error.noAdmin') // Technically login required first but re-using or new key
-  if (!isAdmin.value) return t('admin.error.noAdmin')
+  if (isAdmin == false) return t('admin.error.noAdmin')
   if (!bezeichnung.value.trim()) return t('admin.error.required')
   if (!standort.value.trim()) return t('admin.error.locationRequired')
   const k = Number(kapazitaet.value)
@@ -48,27 +42,19 @@ function validate() {
 async function submit() {
   msg.value = ''
   err.value = ''
-  syncSession()
 
   const v = validate()
   if (v) { err.value = v; return }
 
   loading.value = true
   try {
-    const res = await fetch(`${API_BASE}/admin/rooms`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${getToken()}`,
-      },
-      body: JSON.stringify({
-        bezeichnung: bezeichnung.value,
-        standort: standort.value,
-        kapazitaet: Number(kapazitaet.value),
-      })
+    const res = await api.post('/admin/rooms', {
+      bezeichnung: bezeichnung.value,
+      standort: standort.value,
+      kapazitaet: Number(kapazitaet.value),
     })
-
-    const data = await res.json().catch(() => ({}))
+    console.log('API Response:', res)
+    const data = res.data
     if (res.status === 401) throw new Error(data.error || t('calendar.messages.loginRequired'))
     if (res.status === 403) throw new Error(data.error || t('admin.error.noAdmin'))
     if (!res.ok) throw new Error(data.error || t('common.error'))
@@ -92,18 +78,8 @@ async function submit() {
       <p class="page-subtitle">{{ $t('admin.subtitle') }}</p>
     </header>
 
-    <!-- Error State: Not Logged In -->
-    <div v-if="!isLoggedIn" class="card error-state">
-      <div class="error-content">
-        <div class="error-icon">🔒</div>
-        <h2>{{ $t('admin.accessRestricted') }}</h2>
-        <p>{{ $t('admin.loginRequiredText') }}</p>
-        <RouterLink class="btn btn-primary" to="/login">{{ $t('admin.toLogin') }}</RouterLink>
-      </div>
-    </div>
-
     <!-- Error State: No Admin Rights -->
-    <div v-else-if="!isAdmin" class="card error-state">
+    <div v-if="isAdmin == false" class="card error-state">
       <div class="error-content">
         <div class="error-icon">🛡️</div>
         <h2>{{ $t('admin.noPermission') }}</h2>
@@ -113,7 +89,7 @@ async function submit() {
     </div>
 
     <!-- Admin Form -->
-    <div v-else class="admin-content">
+    <div class="admin-content">
       <div class="card admin-form-card">
         <div class="card-header">
           <h2>{{ $t('admin.createRoom') }}</h2>

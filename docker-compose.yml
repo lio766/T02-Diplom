@@ -2,7 +2,7 @@ services:
   # 1. Datenbank (MySQL)
   db:
     image: mysql:8.0
-    restart: always
+    restart: unless-stopped
     env_file:
       - .env
     environment:
@@ -20,17 +20,38 @@ services:
     networks:
       - app-network
     ports:
-      - "3307:3306"
+      - "3306:3306"
     healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u$DB_USER -p$DB_PASSWORD"]
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u$MYSQL_USER -p$MYSQL_PASSWORD"]
       interval: 5s
       timeout: 5s
       retries: 10
 
+  db_kc:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: keycloak
+      MYSQL_USER: keycloak
+      MYSQL_PASSWORD: mypassword123
+      MYSQL_ROOT_PASSWORD: myrootpassword123
+    ports:
+      - "3307:3306"
+    volumes:
+      - db_kc_data:/var/lib/mysql
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p$$MYSQL_ROOT_PASSWORD"]  
+      interval: 5s        # Check every 5 seconds  
+      timeout: 5s         # Fail if command takes >5s  
+      retries: 5          # Mark as unhealthy after 5 failures  
+      start_period: 10s   # Wait 10s before first check (MySQL needs time to start)  
+
   # 2. API (Node/Express)
   backend:
     build: ./backend
-    restart: always
+    restart: unless-stopped
     env_file:
       - .env
     environment:
@@ -42,6 +63,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      keycloak:
+        condition: service_started
     ports:
       - "3000:3000"
     networks:
@@ -50,6 +73,7 @@ services:
   # 3. Reverse Proxy & Static Webserver (NGINX)
   nginx:
     image: nginx:alpine
+    restart: unless-stopped
     ports:
       - "80:80"
 #      - "443:443"
@@ -63,9 +87,59 @@ services:
       context: ./frontend
     restart: always
 
-volumes:
-  db_data:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0.0
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    command:
+      - start
+      - --realm-import
+      - --hostname-strict=false
+      - --proxy-headers=xforwarded
+      - --http-enabled=true
+      - --health-enabled=true
+    environment:
+      KC_DB: mysql
+      KC_DB_URL: jdbc:mysql://db_kc:3306/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: mypassword123
+
+      KC_HOSTNAME: localhost
+      KC_HTTP_RELATIVE_PATH: /auth
+
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin123
+
+      KC_LOG_LEVEL: INFO
+    depends_on:
+      db_kc:
+        condition: service_healthy
+    secrets:
+      - keycloak_db_password
+      - keycloak_admin_password
+    volumes:
+      - keycloak_data:/opt/keycloak/data
+      - ./keycloak/realm-import:/opt/keycloak/data/import
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/auth/realms/master || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
 networks:
   app-network:
     driver: bridge
+
+volumes:
+  db_data:
+  db_kc_data:
+  keycloak_data:
+
+secrets:
+  keycloak_db_password:
+    file: ./secrets/keycloak_db_password.txt
+  keycloak_admin_password:
+    file: ./secrets/keycloak_admin_password.txt

@@ -2,17 +2,21 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { getAuth, getToken, clearAuth } from './lib/auth'
 
 const router = useRouter()
-const { t, locale } = useI18n()
-const session = ref(getAuth())
+import { getToken, useKeycloak } from '@josempgon/vue-keycloak';
+const { decodedToken, isPending, isAuthenticated, error, username, keycloak, hasRoles } = useKeycloak();
+const router = useRouter()
 const showDropdown = ref(false)
 const isDark = ref(localStorage.getItem('theme') === 'dark')
 
-function syncSession() {
-  session.value = getAuth()
-}
+onMounted(async () => {
+  if(isAuthenticated.value){
+    console.log('User is authenticated');
+    const token = await getToken();
+    console.log('Initial token:', token);
+  }
+})
 
 function toggleDarkMode() {
   isDark.value = !isDark.value
@@ -37,15 +41,11 @@ function toggleLanguage() {
 }
 
 onMounted(() => {
-  window.addEventListener('auth-changed', syncSession)
-  window.addEventListener('storage', syncSession)
   document.addEventListener('click', closeDropdown)
   updateTheme()
 })
 
 onUnmounted(() => {
-  window.removeEventListener('auth-changed', syncSession)
-  window.removeEventListener('storage', syncSession)
   document.removeEventListener('click', closeDropdown)
 })
 
@@ -59,42 +59,39 @@ function toggleDropdown() {
   showDropdown.value = !showDropdown.value
 }
 
-function handleLogout() {
-  clearAuth()
-  showDropdown.value = false
-  router.push('/login')
-}
-
-const isLoggedIn = computed(() => Boolean(session.value?.token))
+const isLoggedIn = computed(() => {
+  return isAuthenticated.value
+})
 
 const userDisplay = computed(() => {
-  const u = session.value?.user
-  if (!u) return t('nav.guest')
-  if (u.vorname && u.nachname) return `${u.vorname} ${u.nachname}`
-  return u.email || t('nav.user')
+  return decodedToken.value?.name || username;
 })
 
 const userInitials = computed(() => {
-  const u = session.value?.user
-  if (!u) return 'G'
-  if (u.vorname && u.nachname) {
-    return (u.vorname[0] + u.nachname[0]).toUpperCase()
-  }
-  const email = u.email || ''
-  return email.substring(0, 2).toUpperCase() || 'U'
+    let name = String(userDisplay.value) || '';
+    return name.split(' ').map(n => n[0]).join('').toUpperCase();
+})
+
+const userEmail = computed(() => {
+    return decodedToken.value?.email || '';
 })
 
 const isAdmin = computed(() => {
-  const u = session.value?.user
-  return Number(u?.rollen_id) === 2
+
+    return hasRoles(['administrator']);
+})
+
+const isGenehmiger = computed(() => {
+    return hasRoles(['genehmiger']);
 })
 
 const roleLabel = computed(() => {
-  const u = session.value?.user
-  if (Number(u?.rollen_id) === 2) return 'admin'
-  if (Number(u?.rollen_id) === 1) return 'Mitarbeiter'
-  return ''
+  if (isAdmin) return "Admin"
+  if (isGenehmiger) return "Genehmiger"
+  return 'Mitarbeiter'
 })
+
+
 </script>
 
 <template>
@@ -115,7 +112,6 @@ const roleLabel = computed(() => {
              <RouterLink v-if="isAdmin" to="/admin" class="nav-link admin-link" active-class="is-active">{{ $t('nav.admin') }}</RouterLink>
           </div>
   
-          <!-- Right Side: Auth / Profile -->
           <div class="auth-nav">
             <template v-if="!isLoggedIn">
                <RouterLink to="/login" class="nav-btn-ghost">{{ $t('nav.login') }}</RouterLink>
@@ -144,11 +140,11 @@ const roleLabel = computed(() => {
                       <div class="dropdown-avatar-large">{{ userInitials }}</div>
                       <div class="dropdown-info">
                          <span class="dropdown-name">{{ userDisplay }}</span>
-                         <span class="dropdown-email" v-if="session?.user?.email">{{ session.user.email }}</span>
+                         <span class="dropdown-email">{{ userEmail }}</span>
                       </div>
                    </div>
                    <div class="dropdown-divider"></div>
-                   <button @click="handleLogout" class="dropdown-item text-danger">
+                   <button @click="keycloak.logout" class="dropdown-item text-danger">
                       <span>🚪</span> {{ $t('nav.logout') }}
                    </button>
                 </div>

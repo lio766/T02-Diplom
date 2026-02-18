@@ -1,8 +1,10 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { getAuth, getToken } from '../lib/auth'
 import BookingForm from '../components/BookingForm.vue'
+import api from '../lib/api.js'
+import {getToken, useKeycloak } from '@josempgon/vue-keycloak';
+const {isPending, isAuthenticated, error, username, userId, keycloak, roles, hasRoles } = useKeycloak();
 
 const { t, tm } = useI18n()
 
@@ -13,10 +15,12 @@ const roomId = ref('')
 
 const loadingRooms = ref(false)
 const loadingBookings = ref(false)
-const error = ref('')
+const errorCalender = ref('')
 
 const currentView = ref('calendar') // 'calendar' or 'table'
 const showBookingPanel = ref(false)
+
+const token = computed(() => getToken())
 
 
 const weekCursor = ref(new Date())
@@ -74,21 +78,12 @@ const bookings = ref([])
 const selectedBooking = ref(null)
 const showDetails = ref(false)
 
-const session = ref(getAuth())
-const isLoggedIn = computed(() => Boolean(getToken()))
-const isAdmin = computed(() => {
-  const u = session.value?.user
-  return Number(u?.rollen_id) === 2
+const isLoggedIn = computed(() => isAuthenticated.value)
+const isGenehmiger = computed(() => {
+    return hasRoles(['genehmiger'])
 })
-
-const canEditCurrentBooking = computed(() => {
-  if (!session.value?.user || !selectedBooking.value) return false
-  const userId = session.value.user.benutzer_id
-  // Admin can edit any booking
-  if (isAdmin.value) return true
-  // User can edit their own booking (if they're a participant)
-  const participants = Array.isArray(selectedBooking.value?.participants) ? selectedBooking.value.participants : []
-  return participants.some(p => Number(p?.id) === Number(userId))
+const isAdmin = computed(() => {
+    return hasRoles(['administrator'])
 })
 
 const editRoomId = ref('')
@@ -231,7 +226,6 @@ function bookingParticipantsLabel(b) {
 }
 
 function openDetails(b) {
-  session.value = getAuth()
   selectedBooking.value = b
   showDetails.value = true
 
@@ -267,7 +261,6 @@ function parseEmails(text) {
 async function saveBooking() {
   detailMsg.value = ''
   detailErr.value = ''
-  session.value = getAuth()
 
   if (!selectedBooking.value?.id) { detailErr.value = t('calendar.messages.noBookingSelected'); return }
   if (!isLoggedIn.value) { detailErr.value = t('calendar.messages.loginRequired'); return }
@@ -283,13 +276,7 @@ async function saveBooking() {
 
   saving.value = true
   try {
-    const res = await fetch(`${API_BASE}/bookings/${selectedBooking.value.id}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${getToken()}`,
-      },
-      body: JSON.stringify({
+    const res = await api.post(`/bookings/${selectedBooking.value.id}`, {
         room_id: Number(editRoomId.value),
         date: editDate.value,
         start_time: editStart.value,
@@ -297,7 +284,6 @@ async function saveBooking() {
         name: editName.value,
         beschreibung: editBeschreibung.value,
         participant_emails: parseEmails(editParticipants.value),
-      })
     })
 
     if (res.status === 204) {
@@ -308,7 +294,7 @@ async function saveBooking() {
       return
     }
 
-    const data = await res.json().catch(() => ({}))
+    const data = await res.data.catch(() => ({}))
     if (res.status === 401) throw new Error(data.error || t('calendar.messages.loginRequired'))
     if (res.status === 403) throw new Error(data.error || t('calendar.messages.adminRequired'))
     if (res.status === 409) throw new Error(data.error || t('calendar.messages.occupied'))
@@ -327,7 +313,6 @@ async function saveBooking() {
 async function deleteBooking() {
   detailMsg.value = ''
   detailErr.value = ''
-  session.value = getAuth()
 
   if (!selectedBooking.value?.id) { detailErr.value = t('calendar.messages.noBookingSelected'); return }
   if (!isLoggedIn.value) { detailErr.value = t('calendar.messages.loginRequired'); return }
@@ -338,9 +323,7 @@ async function deleteBooking() {
 
   deleting.value = true
   try {
-    const res = await fetch(`${API_BASE}/bookings/${selectedBooking.value.id}`, {
-      method: 'DELETE',
-      headers: { 'Authorization': `Bearer ${getToken()}` },
+    const res = await api.PLCHLDR(`/bookings/${selectedBooking.value.id}`, {
     })
     if (res.status === 401) {
       const data = await res.json().catch(() => ({}))
@@ -376,14 +359,15 @@ function weekRangeQuery() {
 
 async function loadRooms() {
   loadingRooms.value = true
-  error.value = ''
+  errorCalender.value = ''
   try {
-    const res = await fetch(`${API_BASE}/rooms`)
-    if (!res.ok) throw new Error(t('calendar.messages.loadRoomsError'))
-    rooms.value = await res.json()
+    const res = await api.get(`/rooms`)
+    console.log('Räume geladen:', res.data)
+    if (!res.data) throw new Error(t('calendar.messages.loadRoomsError'))
+    rooms.value = res.data
     if (!roomId.value && rooms.value.length) roomId.value = String(rooms.value[0].id)
   } catch (e) {
-    error.value = e.message
+    errorCalender.value = e.message
   } finally {
     loadingRooms.value = false
   }
@@ -396,19 +380,20 @@ async function loadBookings() {
   }
 
   loadingBookings.value = true
-  error.value = ''
+  errorCalender.value = ''
   try {
     const { from, to } = weekRangeQuery()
-    const url = new URL(`${API_BASE}/bookings`, window.location.origin)
-    url.searchParams.set('room_id', String(roomId.value))
-    url.searchParams.set('from', from)
-    url.searchParams.set('to', to)
+    let params = {
+    room_id:  roomId.value,
+    from: from,
+    to: to,
+    }
 
-    const res = await fetch(url.toString().replace(window.location.origin, ''))
-    if (!res.ok) throw new Error(t('calendar.messages.loadBookingsError'))
-    bookings.value = await res.json()
+    const res = await api.get(`/bookings`, { params })
+    if (!res.data) throw new Error(t('calendar.messages.loadBookingsError'))
+    bookings.value = await res.data
   } catch (e) {
-    error.value = e.message
+    errorCalender.value = e.message
   } finally {
     loadingBookings.value = false
   }
@@ -488,8 +473,8 @@ onMounted(async () => {
           </div>
         </header>
 
-        <div v-if="error" class="message is-error">
-          <span class="icon">⚠️</span> {{ error }}
+        <div v-if="errorCalender" class="message is-errorCalender">
+          <span class="icon">⚠️</span> {{ errorCalender }}
         </div>
 
         <!-- Calendar Grid -->
@@ -693,7 +678,7 @@ onMounted(async () => {
                </div>
 
                <div v-if="detailMsg" class="message is-success">{{ detailMsg }}</div>
-               <div v-if="detailErr" class="message is-error">{{ detailErr }}</div>
+               <div v-if="detailErr" class="message is-errorCalender">{{ detailErr }}</div>
             </div>
          </div>
       </div>
@@ -846,7 +831,7 @@ onMounted(async () => {
   font-weight: 600;
 }
 
-.message.is-error {
+.message.is-errorCalender {
   background-color: var(--color-danger-bg);
   color: var(--color-danger);
   padding: var(--space-4);
