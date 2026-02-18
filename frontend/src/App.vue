@@ -3,7 +3,6 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 
-const router = useRouter()
 import { getToken, useKeycloak } from '@josempgon/vue-keycloak';
 const { decodedToken, isPending, isAuthenticated, error, username, keycloak, hasRoles } = useKeycloak();
 const router = useRouter()
