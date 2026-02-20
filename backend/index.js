@@ -567,7 +567,7 @@ app.post('/bookings', authenticate, async (req, res) => {
     }
 })
 
-app.post('/api/bookings', requireAuth, async (req, res) => {
+app.post('/api/bookings', authenticate, async (req, res) => {
 	try {
 		const { room, room_id, date, start_time, end_time, name, beschreibung } = req.body || {}
 		const authUserId = req.user.id

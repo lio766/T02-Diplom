@@ -85,7 +85,7 @@ services:
       - app-network
     build:
       context: ./frontend
-    restart: always
+    
 
   keycloak:
     image: quay.io/keycloak/keycloak:26.0.0
@@ -93,8 +93,8 @@ services:
     ports:
       - "8080:8080"
     command:
-      - start
-      - --realm-import
+      - start 
+      - --import-realm
       - --hostname-strict=false
       - --proxy-headers=xforwarded
       - --http-enabled=true
@@ -112,6 +112,7 @@ services:
       KEYCLOAK_ADMIN_PASSWORD: admin123
 
       KC_LOG_LEVEL: INFO
+      KEYCLOAK_IMPORT: 
     depends_on:
       db_kc:
         condition: service_healthy
