@@ -17,6 +17,8 @@ onMounted(async () => {
   }
 })
 
+let local = ref(localStorage.getItem('lang') || 'de')
+
 function toggleDarkMode() {
   isDark.value = !isDark.value
   updateTheme()
@@ -34,8 +36,8 @@ function updateTheme() {
 }
 
 function toggleLanguage() {
-  const newLang = locale.value === 'de' ? 'en' : 'de'
-  locale.value = newLang
+  const newLang = local.value === 'de' ? 'en' : 'de'
+  local.value = newLang
   localStorage.setItem('lang', newLang)
 }
 
@@ -119,7 +121,7 @@ const roleLabel = computed(() => {
   
             <template v-else>
               <button class="theme-toggle-btn" @click="toggleLanguage" :title="$t('lang.toggle')">
-                {{ locale === 'de' ? '🇩🇪' : '🇺🇸' }}
+                {{ local === 'de' ? '🇩🇪' : '🇺🇸' }}
               </button>
               <button class="theme-toggle-btn" @click="toggleDarkMode" :title="isDark ? $t('theme.light') : $t('theme.dark')">
                 {{ isDark ? '🌙' : '☀️' }}

@@ -57,7 +57,6 @@ async function submit() {
     const data = res.data
     if (res.status === 401) throw new Error(data.error || t('calendar.messages.loginRequired'))
     if (res.status === 403) throw new Error(data.error || t('admin.error.noAdmin'))
-    if (!res.ok) throw new Error(data.error || t('common.error'))
 
     msg.value = `${t('admin.success')} (ID: ${data.id}).`
     bezeichnung.value = ''

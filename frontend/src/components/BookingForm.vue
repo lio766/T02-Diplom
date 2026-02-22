@@ -14,7 +14,7 @@ const roomId = ref('')
 const date = ref('')
 const start = ref('08:00')
 const end = ref('09:00')
-const name = ref('')
+const meetingName = ref('')
 const beschreibung = ref('')
 const participantQuery = ref('')
 const participantResults = ref([])
@@ -111,7 +111,7 @@ watch(() => props.rooms, (list) => {
 
 function validate() {
   if (!isLoggedIn.value) return 'Bitte zuerst einloggen.'
-  if (!roomId.value || !date.value || !start.value || !end.value || !name.value) return 'Bitte alle erforderlichen Felder ausfüllen.'
+  if (!roomId.value || !date.value || !start.value || !end.value || !meetingName.value) return 'Bitte alle erforderlichen Felder ausfüllen.'
   if (end.value <= start.value) return 'Endzeit muss nach der Startzeit liegen.'
   return ''
 }
@@ -132,16 +132,16 @@ async function submit() {
         date: date.value,
         start_time: start.value,
         end_time: end.value,
-        name: name.value,
+        name: meetingName.value,
         beschreibung: beschreibung.value,
         participant_emails: participants,
     })
     if (res.status === 401) {
-      const data = await res.json().catch(() => ({}))
+      const data = await res.data.catch(() => ({}))
       throw new Error(data.error || 'Bitte zuerst einloggen')
     }
     if (res.status === 409) {
-      const data = await res.json()
+      const data = await res.data.catch(() => ({}))
       throw new Error(data.error || 'Zeitfenster belegt')
     }
     success.value = 'Buchung gespeichert.'
@@ -179,7 +179,7 @@ async function submit() {
           <div class="select-wrapper">
              <select v-model="roomId" class="form-input">
                 <option v-for="r in rooms" :key="r.id" :value="String(r.id)">
-                   {{ r.name || r.Bezeichnung || r.bezeichnung }}
+                   {{ r.name}}
                 </option>
              </select>
              <span class="select-arrow">▼</span>
@@ -193,7 +193,7 @@ async function submit() {
 
         <div class="form-group">
            <label class="form-label">Name / Titel der Buchung</label>
-           <input v-model="name" class="form-input" type="text" placeholder="z.B. Team Meeting" required />
+           <input v-model="meetingName" class="form-input" type="text" placeholder="z.B. Team Meeting" required />
         </div>
 
         <div class="form-group">
