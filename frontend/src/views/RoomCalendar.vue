@@ -67,7 +67,7 @@ const dayLabels = computed(() => tm('days'))
 
 const timeSlots = computed(() => {
   const out = []
-  for (let h = startHour; h <= endHour; h++) out.push(`${pad2(h)}:00`)
+  for (let h = startHour; h < endHour; h++) out.push(`${pad2(h)}:00`)
   return out
 })
 
@@ -503,20 +503,12 @@ onMounted(async () => {
                       :key="toIsoDate(d)"
                       class="day-column"
                       :class="{ 'is-today': toIsoDate(d) === todayIso }"
-                      :style="{ height: gridHeightPx + 'px' }"
+                       :style="{ height: gridHeightPx + 'px', '--hour-row-height': (60 * pxPerMinute) + 'px' }"
                     >
                        <!-- Current Time Line -->
                        <div v-if="toIsoDate(d) === todayIso && showNowLine" class="now-line" :style="nowLineStyle">
                           <div class="now-dot"></div>
                        </div>
-
-                       <!-- Hour Grid Lines -->
-                       <div
-                         v-for="h in (endHour - startHour)"
-                         :key="h"
-                         class="grid-line"
-                         :style="{ top: (h * 60 * pxPerMinute) + 'px' }"
-                       ></div>
 
                        <!-- Bookings -->
                        <div
@@ -856,7 +848,8 @@ onMounted(async () => {
 }
 
 .calendar-header {
-  display: flex;
+  display: grid;
+  grid-template-columns: 70px repeat(7, minmax(0, 1fr));
   border-bottom: 1px solid var(--color-border);
   background-color: var(--color-bg-secondary);
 }
@@ -868,7 +861,7 @@ onMounted(async () => {
 }
 
 .day-column-header {
-  flex: 1;
+  min-width: 0;
   text-align: center;
   padding: var(--space-3) var(--space-2);
   border-right: 1px solid var(--color-border);
@@ -913,7 +906,8 @@ onMounted(async () => {
 }
 
 .calendar-body {
-  display: flex;
+  display: grid;
+  grid-template-columns: 70px minmax(0, 1fr);
   position: relative;
 }
 
@@ -934,7 +928,7 @@ onMounted(async () => {
 
 .time-tick span {
   position: absolute;
-  top: -10px;
+  top: 6px;
   left: 0;
   width: 100%;
   text-align: center;
@@ -944,28 +938,28 @@ onMounted(async () => {
 }
 
 .days-container {
-  flex: 1;
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   position: relative;
 }
 
 .day-column {
-  flex: 1;
   position: relative;
   border-right: 1px solid var(--color-border);
+  min-width: 0;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent,
+    transparent calc(var(--hour-row-height) - 1px),
+    var(--color-border) calc(var(--hour-row-height) - 1px),
+    var(--color-border) var(--hour-row-height)
+  );
+  background-repeat: repeat-y;
+  background-size: 100% var(--hour-row-height);
 }
 
 .day-column:last-child {
   border-right: none;
-}
-
-.grid-line {
-  position: absolute;
-  left: 0;
-  right: 0;
-  border-top: 1px solid var(--color-border);
-  opacity: 0.4;
-  pointer-events: none;
 }
 
 /* Now Line */

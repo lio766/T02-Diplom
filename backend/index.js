@@ -2,6 +2,7 @@ import express from 'express';
 import mysql from 'mysql2/promise'
 import { authenticate } from './authenticate.js'
 import { requireRole } from "./authorize.js";
+import { sendMail } from './emailService.js'
 
 const app = express()
 const PORT = process.env.PORT || 3000
@@ -61,6 +62,11 @@ async function checkDbConnection() {
 async function getRoomIdByName(name) {
     const [rows] = await pool.query('SELECT Raum_Id AS id FROM Raum WHERE Bezeichnung = ? LIMIT 1', [name])
     return rows.length ? rows[0].id : null
+}
+
+async function getRoomNameById(id) {
+    const [rows] = await pool.query('SELECT Bezeichnung AS name FROM Raum WHERE Raum_Id = ? LIMIT 1', [id])
+    return rows.length ? rows[0].name : null
 }
 
 // Helper: optional resolve Benutzer by "Vorname Nachname" string
@@ -558,6 +564,31 @@ app.post('/bookings', authenticate, async (req, res) => {
             }
 
             await conn.commit()
+
+            const recipientEmail = String(req.user?.email || '').trim()
+            if (recipientEmail) {
+                try {
+                    const resolvedRoomName = room || await getRoomNameById(raumId) || `Raum ${raumId}`
+                    await sendMail(
+                        recipientEmail,
+                        `AGORA Buchung ausstehend - ${nameFinal}`,
+                        'booking-pending',
+                        {
+                            room_name: resolvedRoomName,
+                            date: String(date),
+                            start_time: String(start_time),
+                            end_time: String(end_time),
+                            booking_name: nameFinal,
+                            description: beschreibungFinal,
+                            participants: participantEmails,
+                            requester_name: String(req.user?.name || req.user?.preferred_username || req.user?.email || '').trim(),
+                        }
+                    )
+                } catch (mailErr) {
+                    console.error('Pending mail send failed:', mailErr)
+                }
+            }
+
             return res.status(201).json({ id: bookingId })
         } finally {
             conn.release()
@@ -623,6 +654,31 @@ app.post('/api/bookings', authenticate, async (req, res) => {
             }
 
             await conn.commit()
+
+            const recipientEmail = String(req.user?.email || '').trim()
+            if (recipientEmail) {
+                try {
+                    const resolvedRoomName = room || await getRoomNameById(raumId) || `Raum ${raumId}`
+                    await sendMail(
+                        recipientEmail,
+                        `AGORA Buchung ausstehend - ${nameFinal}`,
+                        'booking-pending',
+                        {
+                            room_name: resolvedRoomName,
+                            date: String(date),
+                            start_time: String(start_time),
+                            end_time: String(end_time),
+                            booking_name: nameFinal,
+                            description: beschreibungFinal,
+                            participants: participantEmails,
+                            requester_name: String(req.user?.name || req.user?.preferred_username || req.user?.email || '').trim(),
+                        }
+                    )
+                } catch (mailErr) {
+                    console.error('Pending mail send failed:', mailErr)
+                }
+            }
+
             return res.status(201).json({ id: bookingId })
         } finally {
             conn.release()
