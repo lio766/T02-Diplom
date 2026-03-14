@@ -1,13 +1,15 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 
 import { getToken, useKeycloak } from '@josempgon/vue-keycloak';
 const { decodedToken, isPending, isAuthenticated, error, username, keycloak, hasRoles } = useKeycloak();
 const router = useRouter()
+const { locale } = useI18n()
 const showDropdown = ref(false)
-const isDark = ref(localStorage.getItem('theme') === 'dark')
+const showThemeDropdown = ref(false)
+const currentTheme = ref(localStorage.getItem('theme') || 'light')
 
 onMounted(async () => {
   if(isAuthenticated.value){
@@ -17,37 +19,65 @@ onMounted(async () => {
   }
 })
 
-let local = ref(localStorage.getItem('lang') || 'de')
-
-function toggleDarkMode() {
-  isDark.value = !isDark.value
+function setTheme(theme) {
+  currentTheme.value = theme
   updateTheme()
+  showThemeDropdown.value = false
+}
+
+function toggleThemeDropdown() {
+  showThemeDropdown.value = !showThemeDropdown.value
+}
+
+function closeThemeDropdown(e) {
+  if (!e.target.closest('.theme-dropdown-wrapper')) {
+    showThemeDropdown.value = false
+  }
+}
+
+function updateLangHTML(lang) {
+  document.documentElement.lang = lang
+  localStorage.setItem('lang', lang)
+}
+
+function toggleLang() {
+  const newLang = locale.value === 'de' ? 'en' : 'de'
+  locale.value = newLang
+}
+
+watch(locale, updateLangHTML)
+
+function initLang() {
+  const savedLang = localStorage.getItem('lang')
+  if (savedLang) {
+    locale.value = savedLang
+  }
+  updateLangHTML(locale.value)
 }
 
 function updateTheme() {
   const html = document.documentElement
-  if (isDark.value) {
+  html.classList.remove('dark-mode', 'high-contrast-mode')
+  
+  if (currentTheme.value === 'dark') {
     html.classList.add('dark-mode')
-    localStorage.setItem('theme', 'dark')
-  } else {
-    html.classList.remove('dark-mode')
-    localStorage.setItem('theme', 'light')
+  } else if (currentTheme.value === 'high-contrast') {
+    html.classList.add('high-contrast-mode')
   }
-}
-
-function toggleLanguage() {
-  const newLang = local.value === 'de' ? 'en' : 'de'
-  local.value = newLang
-  localStorage.setItem('lang', newLang)
+  
+  localStorage.setItem('theme', currentTheme.value)
 }
 
 onMounted(() => {
   document.addEventListener('click', closeDropdown)
+  document.addEventListener('click', closeThemeDropdown)
   updateTheme()
+  initLang()
 })
 
 onUnmounted(() => {
   document.removeEventListener('click', closeDropdown)
+  document.removeEventListener('click', closeThemeDropdown)
 })
 
 function closeDropdown(e) {
@@ -87,8 +117,8 @@ const isGenehmiger = computed(() => {
 })
 
 const roleLabel = computed(() => {
-  if (isAdmin) return "Admin"
-  if (isGenehmiger) return "Genehmiger"
+  if (isAdmin.value) return 'Admin'
+  if (isGenehmiger.value) return 'Genehmiger'
   return 'Mitarbeiter'
 })
 
@@ -107,25 +137,42 @@ const roleLabel = computed(() => {
         <!-- Private Navigation -->
         <div class="nav-wrapper-inner">
           <div class="main-nav" v-if="isLoggedIn">
-             <RouterLink to="/" class="nav-link" active-class="is-active" exact>{{ $t('nav.dashboard') }}</RouterLink>
-             <RouterLink to="/booking" class="nav-link" active-class="is-active">{{ $t('nav.booking') }}</RouterLink>
              <RouterLink to="/calendar" class="nav-link" active-class="is-active">{{ $t('nav.calendar') }}</RouterLink>
+             <RouterLink to="/wiki" class="nav-link" active-class="is-active">{{ $t('nav.wiki') }}</RouterLink>
              <RouterLink v-if="isAdmin" to="/admin" class="nav-link admin-link" active-class="is-active">{{ $t('nav.admin') }}</RouterLink>
           </div>
   
           <div class="auth-nav">
+            <button class="theme-toggle-btn" type="button" @click="toggleLang" :title="$t('lang.toggle')">
+              {{ locale === 'de' ? 'DE' : 'EN' }}
+            </button>
             <template v-if="!isLoggedIn">
                <RouterLink to="/login" class="nav-btn-ghost">{{ $t('nav.login') }}</RouterLink>
                <RouterLink to="/register" class="nav-btn-primary">{{ $t('nav.register') }}</RouterLink>
             </template>
   
             <template v-else>
-              <button class="theme-toggle-btn" @click="toggleLanguage" :title="$t('lang.toggle')">
-                {{ local === 'de' ? '🇩🇪' : '🇺🇸' }}
-              </button>
-              <button class="theme-toggle-btn" @click="toggleDarkMode" :title="isDark ? $t('theme.light') : $t('theme.dark')">
-                {{ isDark ? '🌙' : '☀️' }}
-              </button>
+              <div class="theme-dropdown-wrapper">
+                <button class="theme-toggle-btn" @click="toggleThemeDropdown" :title="$t('theme.toggle') || 'Toggle Theme'">
+                  <span v-if="currentTheme === 'light'">☀️</span>
+                  <span v-else-if="currentTheme === 'dark'">🌙</span>
+                  <span v-else>👁️</span>
+                </button>
+                <Transition name="slide-fade">
+                  <div v-show="showThemeDropdown" class="user-dropdown theme-menu-dropdown">
+                    <button @click="setTheme('light')" class="dropdown-item theme-item">
+                      <span>☀️</span> {{ $t('theme.light') || 'Light' }}
+                    </button>
+                    <button @click="setTheme('dark')" class="dropdown-item theme-item">
+                      <span>🌙</span> {{ $t('theme.dark') || 'Dark' }}
+                    </button>
+                    <button @click="setTheme('high-contrast')" class="dropdown-item theme-item">
+                      <span>👁️</span> {{ $t('theme.highContrast') || 'High Contrast' }}
+                    </button>
+                  </div>
+                </Transition>
+              </div>
+
               <div class="user-menu" ref="userMenuRef">
                 <button class="user-trigger" @click="toggleDropdown" :aria-label="$t('nav.openMenu')" :aria-expanded="showDropdown">
                   <div class="user-info-text">
@@ -520,6 +567,26 @@ const roleLabel = computed(() => {
      padding: 2px;
      border: none;
   }
+}
+
+/* Theme Dropdown Styles */
+.theme-dropdown-wrapper {
+  position: relative;
+  margin-right: 0.5rem;
+}
+
+.theme-dropdown-wrapper .theme-toggle-btn {
+  margin-right: 0;
+}
+
+.theme-menu-dropdown {
+  width: 180px;
+  right: -60px; /* Align somewhat centered or right */
+}
+
+.dropdown-item.theme-item:hover {
+  background-color: var(--color-bg-accent);
+  color: var(--color-primary);
 }
 </style>
 

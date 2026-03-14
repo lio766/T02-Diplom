@@ -85,6 +85,65 @@ html.dark-mode {
   color-scheme: dark;
 }
 
+/* High Contrast Mode Theme - WCAG 2.2 AAA Compliant */
+html.high-contrast-mode {
+  /* Backgrounds: Dark Gray (#121212) avoids pure black to reduce halation */
+  --color-bg-primary: #121212;
+  --color-bg-secondary: #000000;
+  --color-bg-accent: #1E1E1E;
+  --color-bg-surface: #121212;
+
+  /* Text: Off-white (#F4F4F4) avoids pure white for eye comfort */
+  --color-text-primary: #F4F4F4;
+  --color-text-secondary: #FFFFFF;
+  --color-text-muted: #E0E0E0;
+
+  /* Primary Colors: Orange/Blue combination for optimal distinction */
+  --color-primary: #FFA500; /* Orange for high visibility */
+  --color-primary-hover: #FFB733;
+  --color-primary-dark: #CC8400;
+  --color-primary-light: #3D2900;
+  
+  --color-danger: #FF7F7F;
+  --color-danger-bg: #330000;
+  --color-success: #7CFF7C;
+  --color-success-bg: #003300;
+  
+  --color-border: #F4F4F4; /* Strong border for boundaries */
+  --navbar-bg: #121212;
+  color-scheme: dark;
+  
+  --focus-ring: 0 0 0 4px #F4F4F4;
+}
+
+/* High Contrast Overrides */
+html.high-contrast-mode a {
+  color: #66B2FF; /* Light Blue links */
+  text-decoration: underline;
+}
+
+html.high-contrast-mode .btn, 
+html.high-contrast-mode input,
+html.high-contrast-mode select,
+html.high-contrast-mode textarea,
+html.high-contrast-mode .card,
+html.high-contrast-mode .navbar {
+  border: 2px solid var(--color-border);
+}
+
+html.high-contrast-mode .btn-primary {
+  background-color: var(--color-primary);
+  color: #000000;
+  font-weight: 800;
+}
+
+html.high-contrast-mode .alert-success, 
+html.high-contrast-mode .message.is-success, 
+html.high-contrast-mode .message.success {
+  color: #FFFFFF;
+  border-color: #FFFFFF;
+}
+
 /* Dark Mode Form Elements helpers */
 html.dark-mode input,
 html.dark-mode select,

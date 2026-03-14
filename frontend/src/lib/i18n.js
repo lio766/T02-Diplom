@@ -1,5 +1,4 @@
 import { createI18n } from 'vue-i18n'
-import { ref } from 'vue'
 
 const messages = {
   de: {
@@ -9,6 +8,7 @@ const messages = {
       booking: 'Buchen',
       calendar: 'Kalender',
       admin: 'Admin',
+      wiki: 'Wiki',
       login: 'Anmelden',
       register: 'Konto erstellen',
       logout: 'Abmelden',
@@ -19,6 +19,7 @@ const messages = {
     days: ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'],
     calendar: {
        toolbar: {
+         myCalendar: 'Mein Kalender',
          prevWeek: 'Vorherige Woche',
          today: 'Heute',
          nextWeek: 'Nächste Woche',
@@ -132,6 +133,29 @@ const messages = {
       },
       success: 'Registrierung erfolgreich. Du bist jetzt als Mitarbeiter eingeloggt.'
     },
+    bookingForm: {
+      newBooking: 'Neue Buchung',
+      close: 'Schließen',
+      selectRoom: 'Raum',
+      date: 'Datum',
+      nameTitle: 'Name / Titel der Buchung',
+      namePlaceholder: 'z.B. Team Meeting',
+      description: 'Beschreibung',
+      descriptionPlaceholder: 'Optionale Beschreibung der Buchung...',
+      from: 'Von',
+      to: 'Bis',
+      addParticipants: 'Teilnehmer hinzufügen',
+      searchPlaceholder: 'Name suchen...',
+      noResults: 'Keine Ergebnisse',
+      selected: 'Ausgewählt:',
+      book: 'Buchen',
+      loginFirst: 'Bitte zuerst einloggen.',
+      loadUsersError: 'Fehler beim Laden der Benutzer',
+      fillAllFields: 'Bitte alle erforderlichen Felder ausfüllen.',
+      endTimeError: 'Endzeit muss nach der Startzeit liegen.',
+      saved: 'Buchung gespeichert.',
+      occupied: 'Zeitfenster belegt'
+    },
     admin: {
       title: 'Admin Dashboard',
       subtitle: 'Verwaltung von Räumen und Ressourcen',
@@ -194,8 +218,9 @@ const messages = {
       }
     },
     theme: {
-      light: 'Hellen Modus aktivieren',
-      dark: 'Dunklen Modus aktivieren',
+      light: 'Hell',
+      dark: 'Dunkel',
+      highContrast: 'Hoher Kontrast '
     },
     lang: {
       toggle: 'Sprache zu Englisch ändern'
@@ -207,6 +232,21 @@ const messages = {
       loading: 'Lädt...',
       error: 'Fehler',
       success: 'Erfolg'
+    },
+    wiki: {
+      title: 'Wiki & Dokumentation',
+      subtitle: 'Anleitungen und Tutorials',
+      topics: {
+        booking: 'Raum buchen / How to',
+        calendar: 'Kalender nutzen',
+        admin: 'Administration',
+        faq: 'Häufige Fragen'
+      },
+      placeholders: {
+        text: 'Lorem ipsum content for instruction text...',
+        video: 'Video Tutorial Placeholder',
+        image: 'Image Placeholder'
+      }
     }
   },
   en: {
@@ -216,6 +256,7 @@ const messages = {
       booking: 'Booking',
       calendar: 'Calendar',
       admin: 'Admin',
+      wiki: 'Wiki',
       login: 'Login',
       register: 'Create Account',
       logout: 'Logout',
@@ -226,6 +267,7 @@ const messages = {
     days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
     calendar: {
        toolbar: {
+         myCalendar: 'My Calendar',
          prevWeek: 'Previous Week',
          today: 'Today',
          nextWeek: 'Next Week',
@@ -273,6 +315,29 @@ const messages = {
          empty: 'No bookings found.',
          unknownRoom: 'Unknown'
        }
+    },
+    bookingForm: {
+      newBooking: 'New Booking',
+      close: 'Close',
+      selectRoom: 'Room',
+      date: 'Date',
+      nameTitle: 'Name / Title of Booking',
+      namePlaceholder: 'e.g. Team Meeting',
+      description: 'Description',
+      descriptionPlaceholder: 'Optional description...',
+      from: 'From',
+      to: 'To',
+      addParticipants: 'Add Participants',
+      searchPlaceholder: 'Search name...',
+      noResults: 'No results',
+      selected: 'Selected:',
+      book: 'Book',
+      loginFirst: 'Please log in first.',
+      loadUsersError: 'Error loading users',
+      fillAllFields: 'Please fill all required fields.',
+      endTimeError: 'End time must be after start time.',
+      saved: 'Booking saved.',
+      occupied: 'Time slot occupied'
     },
     booking: {
       title: 'Room Booking',
@@ -401,8 +466,9 @@ const messages = {
       }
     },
     theme: {
-      light: 'Enable Light Mode',
-      dark: 'Enable Dark Mode',
+      light: 'Light',
+      dark: 'Dark',
+      highContrast: 'High Contrast'
     },
     lang: {
       toggle: 'Switch to German'
@@ -412,8 +478,21 @@ const messages = {
       save: 'Save',
       loading: 'Loading...',
       error: 'Error',
-      success: 'Success'
-    }
+      success: 'Success'    },
+    wiki: {
+      title: 'Wiki & Documentation',
+      subtitle: 'Guides and Tutorials',
+      topics: {
+        booking: 'How to Book',
+        calendar: 'Using the Calendar',
+        admin: 'Admin Guide',
+        faq: 'FAQ'
+      },
+      placeholders: {
+        text: 'Lorem ipsum content for instruction text...',
+        video: 'Video Tutorial Placeholder',
+        image: 'Image Placeholder'
+      }    }
   }
 }
 
@@ -421,8 +500,8 @@ export const SUPPORTED_LOCALES = ['de', 'en']
 
 const i18n = createI18n({
   legacy: false, // use Composition API
-  locale: localStorage.getItem('lang') || 'de', 
-  fallbackLocale: 'en',
+  locale: 'de',
+  fallbackLocale: 'de',
   globalInjection: true,
   messages
 })

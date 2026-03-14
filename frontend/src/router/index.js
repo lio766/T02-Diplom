@@ -2,28 +2,26 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { useKeycloak } from '@josempgon/vue-keycloak';
 
 const { isPending, isAuthenticated, error, username, userId, keycloak, roles, hasRoles } = useKeycloak();
-import Home from '../views/Home.vue'
-import Booking from '../views/Booking.vue'
+// Home and Booking components removed
 import RoomCalendar from '../views/RoomCalendar.vue'
+import Wiki from '../views/Wiki.vue'
 import Admin from '../views/Admin.vue'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
 const routes = [
     {
-        path: '/', name: 'home', component: Home,
-        meta: {
-            requiresAuth: true,
-        }
-    },
-    {
-        path: '/booking', name: 'booking', component: Booking,
-        meta: {
-            requiresAuth: true,
-        }
+        path: '/',
+        redirect: '/calendar'
     },
     {
         path: '/calendar', name: 'calendar', component: RoomCalendar,
+        meta: {
+            requiresAuth: true,
+        }
+    },
+    {
+        path: '/wiki', name: 'wiki', component: Wiki,
         meta: {
             requiresAuth: true,
         }

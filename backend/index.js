@@ -328,7 +328,7 @@ async function searchUsersHandler(req, res) {
 app.get('/users', authenticate, searchUsersHandler)
 app.get('/api/users', authenticate, searchUsersHandler)
 
-app.get('/bookings', async (req, res) => {
+app.get('/bookings', authenticate, async (req, res) => {
     try {
         const roomId = req.query.room_id != null && String(req.query.room_id).trim() !== ''
             ? Number(req.query.room_id)
@@ -339,13 +339,25 @@ app.get('/bookings', async (req, res) => {
         const to = req.query.to != null && String(req.query.to).trim() !== ''
             ? String(req.query.to).trim()
             : null
+        const mine = req.query.mine === 'true'
 
         const where = []
         const params = []
-        if (roomId != null && Number.isFinite(roomId)) {
+
+        if (mine) {
+             const email = req.user.email
+             const [uRows] = await pool.query('SELECT Benutzer_Id AS id FROM Benutzer WHERE LOWER(Email) = ? LIMIT 1', [String(email).toLowerCase()])
+             if (!uRows.length) {
+                 return res.json([])
+             }
+             const userId = uRows[0].id
+             where.push('EXISTS (SELECT 1 FROM Buchung_Benutzer bb_mine WHERE bb_mine.Buchung_Id = b.Buchung_Id AND bb_mine.Benutzer_Id = ?)')
+             params.push(userId)
+        } else if (roomId != null && Number.isFinite(roomId)) {
             where.push('b.Raum_Id = ?')
             params.push(roomId)
         }
+
         if (from && to) {
             where.push('b.Startzeit >= ? AND b.Startzeit <= ?')
             params.push(`${from} 00:00:00`, `${to} 23:59:59`)

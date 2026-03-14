@@ -160,6 +160,7 @@ async function submit() {
 
 <style scoped>
 .page-header {
+  margin-top: 50px;
   margin-bottom: var(--space-8);
   text-align: center;
 }
@@ -236,6 +237,7 @@ async function submit() {
 
 .is-success {
   background-color: var(--color-success-bg);
+  /*color: #166534;*/
   color: #166534;
   border: 1px solid #bbf7d0;
 }

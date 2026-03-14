@@ -1,8 +1,10 @@
 <script setup>
 import { computed, ref, onMounted, watch, onUnmounted } from 'vue';
+import { useI18n } from 'vue-i18n'
 import { getToken, useKeycloak } from '@josempgon/vue-keycloak';
 import api from '../lib/api.js';
 const { isPending, isAuthenticated, username, userId, keycloak, roles, hasRoles } = useKeycloak();
+const { t } = useI18n()
 const props = defineProps({
   rooms: { type: Array, default: () => [] }
 })
@@ -70,8 +72,8 @@ async function searchUsers(q) {
 
     const res = await api.get(url, {
     })
-    if (res.status === 401) throw new Error('Bitte zuerst einloggen')
-    if (!res.ok) throw new Error('Fehler beim Laden der Benutzer')
+    if (res.status === 401) throw new Error(t('bookingForm.loginFirst'))
+    if (!res.ok) throw new Error(t('bookingForm.loadUsersError'))
     const data = await res.data()
     participantResults.value = Array.isArray(data) ? data : []
   } catch (e) {
@@ -110,9 +112,9 @@ watch(() => props.rooms, (list) => {
 }, { immediate: true })
 
 function validate() {
-  if (!isLoggedIn.value) return 'Bitte zuerst einloggen.'
-  if (!roomId.value || !date.value || !start.value || !end.value || !meetingName.value) return 'Bitte alle erforderlichen Felder ausfüllen.'
-  if (end.value <= start.value) return 'Endzeit muss nach der Startzeit liegen.'
+  if (!isLoggedIn.value) return t('bookingForm.loginFirst')
+  if (!roomId.value || !date.value || !start.value || !end.value || !meetingName.value) return t('bookingForm.fillAllFields')
+  if (end.value <= start.value) return t('bookingForm.endTimeError')
   return ''
 }
 
@@ -138,13 +140,13 @@ async function submit() {
     })
     if (res.status === 401) {
       const data = await res.data.catch(() => ({}))
-      throw new Error(data.error || 'Bitte zuerst einloggen')
+      throw new Error(data.error || t('bookingForm.loginFirst'))
     }
     if (res.status === 409) {
       const data = await res.data.catch(() => ({}))
-      throw new Error(data.error || 'Zeitfenster belegt')
+      throw new Error(data.error || t('bookingForm.occupied'))
     }
-    success.value = 'Buchung gespeichert.'
+    success.value = t('bookingForm.saved')
     // Reset minimal fields
     selectedParticipants.value = []
     participantQuery.value = ''
@@ -161,8 +163,8 @@ async function submit() {
 <template>
   <div class="booking-form-panel">
     <header class="panel-header">
-      <h2>Neue Buchung</h2>
-      <button class="close-btn" type="button" @click="emit('close')" aria-label="Schließen">✕</button>
+      <h2>{{ $t('bookingForm.newBooking') }}</h2>
+      <button class="close-btn" type="button" @click="emit('close')" :aria-label="$t('bookingForm.close')">✕</button>
     </header>
 
     <div class="panel-body">
@@ -175,9 +177,9 @@ async function submit() {
 
       <form v-else @submit.prevent="submit" class="booking-form">
         <div class="form-group">
-          <label class="form-label">Raum</label>
+          <label for="room-select" class="form-label">{{ $t('bookingForm.selectRoom') }}</label>
           <div class="select-wrapper">
-             <select v-model="roomId" class="form-input">
+             <select id="room-select" v-model="roomId" class="form-input">
                 <option v-for="r in rooms" :key="r.id" :value="String(r.id)">
                    {{ r.name}}
                 </option>
@@ -187,50 +189,52 @@ async function submit() {
         </div>
 
         <div class="form-group">
-           <label class="form-label">Datum</label>
-           <input v-model="date" class="form-input" type="date" required />
+           <label for="date-input" class="form-label">{{ $t('bookingForm.date') }}</label>
+           <input id="date-input" v-model="date" class="form-input" type="date" required />
         </div>
 
         <div class="form-group">
-           <label class="form-label">Name / Titel der Buchung</label>
-           <input v-model="meetingName" class="form-input" type="text" placeholder="z.B. Team Meeting" required />
+           <label for="name-input" class="form-label">{{ $t('bookingForm.nameTitle') }}</label>
+           <input id="name-input" v-model="meetingName" class="form-input" type="text" :placeholder="$t('bookingForm.namePlaceholder')" required />
         </div>
 
         <div class="form-group">
-           <label class="form-label">Beschreibung</label>
-           <textarea v-model="beschreibung" class="form-input" rows="3" placeholder="Optionale Beschreibung der Buchung..."></textarea>
+           <label for="desc-input" class="form-label">{{ $t('bookingForm.description') }}</label>
+           <textarea id="desc-input" v-model="beschreibung" class="form-input" rows="3" :placeholder="$t('bookingForm.descriptionPlaceholder')"></textarea>
         </div>
 
         <div class="form-row">
            <div class="form-group">
-              <label class="form-label">Von</label>
-              <input v-model="start" class="form-input" type="time" required />
+              <label for="start-input" class="form-label">{{ $t('bookingForm.from') }}</label>
+              <input id="start-input" v-model="start" class="form-input" type="time" required />
            </div>
            <div class="form-group">
-              <label class="form-label">Bis</label>
-              <input v-model="end" class="form-input" type="time" required />
+              <label for="end-input" class="form-label">{{ $t('bookingForm.to') }}</label>
+              <input id="end-input" v-model="end" class="form-input" type="time" required />
            </div>
         </div>
 
         <!-- Participants Search -->
         <div class="participant-section">
-           <label class="form-label">Teilnehmer hinzufügen</label>
+           <label for="search-input" class="form-label">{{ $t('bookingForm.addParticipants') }}</label>
            <div class="search-wrapper">
-              <input 
-                 v-model="participantQuery" 
-                 class="form-input search-input" 
-                 type="text" 
-                 placeholder="Name suchen..." 
+              <input
+                 id="search-input"
+                 v-model="participantQuery"
+                 class="form-input search-input"
+                 type="text"
+                 :placeholder="$t('bookingForm.searchPlaceholder')"
                  @focus="showParticipantDropdown = !!participantQuery"
               />
               <div v-if="participantLoading" class="spinner-sm"></div>
            </div>
-           
+
            <!-- Search Dropdown -->
            <div v-if="showParticipantDropdown && participantResults.length && participantQuery" class="search-dropdown">
-              <div 
-                 v-for="u in participantResults" 
-                 :key="u.id" 
+              <button
+                 type="button"
+                 v-for="u in participantResults"
+                 :key="u.id"
                  class="dropdown-item"
                  @click="addParticipant(u)"
               >
@@ -240,24 +244,24 @@ async function submit() {
                     <div class="user-email">{{ u.email }}</div>
                  </div>
                  <div v-if="isAlreadySelected(u)" class="already-badge">✓</div>
-              </div>
+              </button>
            </div>
            <div v-else-if="showParticipantDropdown && participantQuery && !participantLoading" class="search-dropdown empty">
-              Keine Ergebnisse
+              {{ $t('bookingForm.noResults') }}
            </div>
         </div>
 
         <!-- Selected Participants -->
         <div v-if="selectedParticipants.length" class="selected-list">
-           <label class="form-label mb-2">Ausgewählt:</label>
+           <label class="form-label mb-2">{{ $t('bookingForm.selected') }}</label>
            <div v-for="p in selectedParticipants" :key="p.id" class="chip">
               <span class="chip-label">{{ p.name || p.email }}</span>
-              <button type="button" class="chip-remove" @click="removeParticipant(p.id)">✕</button>
+              <button type="button" class="chip-remove" @click="removeParticipant(p.id)" :aria-label="$t('bookingForm.removeParticipant')">✕</button>
            </div>
         </div>
 
         <div class="form-actions">
-           <button type="submit" class="btn btn-primary full-width">Buchen</button>
+           <button type="submit" class="btn btn-primary full-width">{{ $t('bookingForm.book') }}</button>
         </div>
       </form>
     </div>
@@ -373,6 +377,14 @@ async function submit() {
   margin-top: 4px;
 }
 .dropdown-item {
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: 0;
+  font-family: inherit;
+  color: inherit;
+  font-size: 1rem;
   padding: 8px 12px;
   display: flex;
   align-items: center;

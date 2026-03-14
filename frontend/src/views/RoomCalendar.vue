@@ -12,6 +12,7 @@ const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
 const rooms = ref([])
 const roomId = ref('')
+const onlyMine = ref(false)
 
 const loadingRooms = ref(false)
 const loadingBookings = ref(false)
@@ -20,10 +21,71 @@ const errorCalender = ref('')
 const currentView = ref('calendar') // 'calendar' or 'table'
 const showBookingPanel = ref(false)
 
+const showRoomDropdown = ref(false)
+
+const currentRoomName = computed(() => {
+  if (onlyMine.value) return t('calendar.toolbar.myCalendar')
+  const r = rooms.value.find(r => String(r.id) === roomId.value)
+  return r ? (r.name || r.Bezeichnung || r.bezeichnung) : (t('calendar.selectRoom') || 'Select Room')
+})
+
+function toggleRoomDropdown() {
+  if (onlyMine.value) return
+  showRoomDropdown.value = !showRoomDropdown.value
+}
+
+function toggleMyCalendar() {
+  if (onlyMine.value) {
+     onlyMine.value = false;
+     if (!roomId.value && rooms.value.length) roomId.value = String(rooms.value[0].id)
+  } else {
+     onlyMine.value = true
+  }
+}
+
+function selectRoom(id) {
+  roomId.value = String(id)
+  onlyMine.value = false
+  showRoomDropdown.value = false
+}
+
+function closeRoomDropdown(e) {
+  if (!e.target.closest('.room-dropdown-wrapper')) {
+    showRoomDropdown.value = false
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('click', closeRoomDropdown)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', closeRoomDropdown)
+  clearInterval(nowTimer)
+})
+
 const token = computed(() => getToken())
 
 
 const weekCursor = ref(new Date())
+const weekPickerInput = ref(null)
+
+function openWeekPicker() {
+  if (weekPickerInput.value) {
+    if (typeof weekPickerInput.value.showPicker === 'function') {
+      weekPickerInput.value.showPicker()
+    } else {
+      weekPickerInput.value.click()
+    }
+  }
+}
+
+function onWeekPicked(e) {
+  const val = e.target.value
+  if (val) {
+    weekCursor.value = new Date(val)
+  }
+}
 
 const startHour = 7
 const endHour = 19
@@ -374,7 +436,7 @@ async function loadRooms() {
 }
 
 async function loadBookings() {
-  if (!roomId.value) {
+  if (!roomId.value && !onlyMine.value) {
     bookings.value = []
     return
   }
@@ -384,9 +446,14 @@ async function loadBookings() {
   try {
     const { from, to } = weekRangeQuery()
     let params = {
-    room_id:  roomId.value,
-    from: from,
-    to: to,
+      from: from,
+      to: to,
+    }
+
+    if (onlyMine.value) {
+       params.mine = 'true'
+    } else {
+       params.room_id = roomId.value
     }
 
     const res = await api.get(`/bookings`, { params })
@@ -423,7 +490,7 @@ function goToday() {
   weekCursor.value = new Date()
 }
 
-watch([roomId, weekCursor], () => { loadBookings() })
+watch([roomId, weekCursor, onlyMine], () => { loadBookings() })
 
 onMounted(async () => {
   await loadRooms()
@@ -438,14 +505,28 @@ onMounted(async () => {
         <!-- Toolbar -->
         <header class="toolbar">
           <div class="toolbar-group">
-            <div class="select-wrapper">
-               <select v-model="roomId" class="form-select room-select" :disabled="loadingRooms">
-                 <option v-for="r in rooms" :key="r.id" :value="String(r.id)">
-                   {{ r.name || r.Bezeichnung || r.bezeichnung }}
-                 </option>
-               </select>
-               <span class="select-arrow">▼</span>
+            <div class="room-dropdown-wrapper">
+                <button class="room-toggle-btn" @click="toggleRoomDropdown" :title="$t('calendar.selectRoom') || 'Select Room'" :disabled="loadingRooms || onlyMine">
+                  <span>{{ currentRoomName }}</span>
+                  <span class="dropdown-arrow">▼</span>
+                </button>
+                <Transition name="slide-fade">
+                  <div v-show="showRoomDropdown" class="user-dropdown room-menu-dropdown">
+                    <button 
+                      v-for="r in rooms" 
+                      :key="r.id" 
+                      @click="selectRoom(r.id)" 
+                      class="dropdown-item room-item"
+                      :class="{ 'is-active': String(r.id) === roomId }"
+                    >
+                       {{ r.name || r.Bezeichnung || r.bezeichnung }}
+                    </button>
+                  </div>
+                </Transition>
             </div>
+            <button class="btn btn-secondary my-calendar-btn" :class="{ 'is-active': onlyMine }" @click="toggleMyCalendar">
+               {{ $t('calendar.toolbar.myCalendar') }}
+            </button>
           </div>
 
           <div class="toolbar-center">
@@ -453,12 +534,24 @@ onMounted(async () => {
                <button class="nav-btn" type="button" @click="prevWeek" :aria-label="$t('calendar.toolbar.prevWeek')">
                   <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
                </button>
-               <button class="nav-btn today-btn" type="button" @click="goToday">{{ $t('calendar.toolbar.today') }}</button>
+               
+               <div class="week-selector">
+                 <button class="current-week-btn" type="button" @click="openWeekPicker" :title="'Woche wählen'">
+                    {{ weekLabel }}
+                 </button>
+                 <input 
+                    ref="weekPickerInput" 
+                    type="date" 
+                    class="hidden-date-input" 
+                    tabindex="-1"
+                    @change="onWeekPicked" 
+                 />
+               </div>
+
                <button class="nav-btn" type="button" @click="nextWeek" :aria-label="$t('calendar.toolbar.nextWeek')">
                   <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
                </button>
             </div>
-            <div class="current-week-label">{{ weekLabel }}</div>
           </div>
 
           <div class="toolbar-group right">
@@ -523,7 +616,10 @@ onMounted(async () => {
                          @keydown.enter.prevent="openDetails(b)"
                        >
                           <div class="booking-time">{{ b.start_time }}</div>
-                          <div class="booking-title">{{ bookingParticipantsLabel(b) }}</div>
+                          <div class="booking-title">
+                             <span v-if="onlyMine && b.room" style="font-weight: bold; margin-right: 4px;">{{ b.room }}:</span>
+                             {{ bookingParticipantsLabel(b) }}
+                          </div>
                        </div>
                     </div>
                  </div>
@@ -589,9 +685,9 @@ onMounted(async () => {
             <div v-if="selectedBooking" class="modal-body">
                <template v-if="canEditCurrentBooking">
                   <div class="form-group">
-                     <label class="form-label">{{ $t('calendar.modal.room') }}</label>
+                     <label for="edit-room-id" class="form-label">{{ $t('calendar.modal.room') }}</label>
                      <div class="select-wrapper">
-                        <select v-model="editRoomId" class="form-input">
+                        <select id="edit-room-id" v-model="editRoomId" class="form-input">
                            <option v-for="r in rooms" :key="r.id" :value="String(r.id)">
                               {{ r.name || r.Bezeichnung || r.bezeichnung }}
                            </option>
@@ -601,29 +697,29 @@ onMounted(async () => {
                   </div>
                   <div class="form-row">
                      <div class="form-group">
-                        <label class="form-label">{{ $t('calendar.modal.date') }}</label>
-                        <input v-model="editDate" class="form-input" type="date" />
+                        <label for="edit-date" class="form-label">{{ $t('calendar.modal.date') }}</label>
+                        <input id="edit-date" v-model="editDate" class="form-input" type="date" />
                      </div>
                      <div class="form-group">
-                        <label class="form-label">{{ $t('calendar.modal.start') }}</label>
-                        <input v-model="editStart" class="form-input" type="time" />
+                        <label for="edit-start" class="form-label">{{ $t('calendar.modal.start') }}</label>
+                        <input id="edit-start" v-model="editStart" class="form-input" type="time" />
                      </div>
                      <div class="form-group">
-                        <label class="form-label">{{ $t('calendar.modal.end') }}</label>
-                        <input v-model="editEnd" class="form-input" type="time" />
+                        <label for="edit-end" class="form-label">{{ $t('calendar.modal.end') }}</label>
+                        <input id="edit-end" v-model="editEnd" class="form-input" type="time" />
                      </div>
                   </div>
                   <div class="form-group">
-                     <label class="form-label">Name / Titel</label>
-                     <input v-model="editName" class="form-input" type="text" placeholder="Name der Buchung" />
+                     <label for="edit-name" class="form-label">{{ $t('bookingForm.nameTitle') }}</label>
+                     <input id="edit-name" v-model="editName" class="form-input" type="text" :placeholder="$t('bookingForm.namePlaceholder')" />
                   </div>
                   <div class="form-group">
-                     <label class="form-label">Beschreibung</label>
-                     <textarea v-model="editBeschreibung" class="form-input" rows="2" placeholder="Optionale Beschreibung..."></textarea>
+                     <label for="edit-desc" class="form-label">{{ $t('bookingForm.description') }}</label>
+                     <textarea id="edit-desc" v-model="editBeschreibung" class="form-input" rows="2" :placeholder="$t('bookingForm.descriptionPlaceholder')"></textarea>
                   </div>
                   <div class="form-group">
-                     <label class="form-label">{{ $t('calendar.modal.participants') }}</label>
-                     <textarea v-model="editParticipants" class="form-input font-mono" rows="3" placeholder="mail1@example.com, mail2@example.com"></textarea>
+                     <label for="edit-parts" class="form-label">{{ $t('calendar.modal.participants') }}</label>
+                     <textarea id="edit-parts" v-model="editParticipants" class="form-input font-mono" rows="3" placeholder="mail1@example.com, mail2@example.com"></textarea>
                      <small class="form-hint">{{ $t('calendar.modal.participantsHint') }}</small>
                   </div>
 
@@ -725,6 +821,7 @@ onMounted(async () => {
 
 /* Toolbar */
 .toolbar {
+  margin-top: 23px;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -738,6 +835,12 @@ onMounted(async () => {
   border: 1px solid var(--color-border);
 }
 
+.toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
 .toolbar-center {
   display: flex;
   align-items: center;
@@ -748,22 +851,100 @@ onMounted(async () => {
   position: relative;
   display: inline-block;
 }
-.room-select {
+.room-dropdown-wrapper {
+  position: relative;
   min-width: 240px;
+}
+
+.my-calendar-btn {
+  background: transparent;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+  font-weight: 600;
+  padding: 0.6rem 1.2rem;
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  transition: all 0.2s;
+  height: 44px; /* Match room-toggle-btn height approximately */
+}
+
+.my-calendar-btn:hover {
+  background-color: var(--color-bg-accent);
+}
+
+.my-calendar-btn.is-active {
+  background-color: var(--color-primary);
+  color: white;
+  border-color: var(--color-primary);
+}
+
+.room-toggle-btn {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
   font-weight: 700;
   font-size: 1.1rem;
-  padding-right: 2.5rem;
-  appearance: none;
-  background-color: var(--color-bg-secondary);
-  border: 1px solid transparent;
   padding: 0.6rem 1rem;
   border-radius: var(--radius-lg);
   cursor: pointer;
-  color: var(--color-text-primary);
+  transition: all 0.2s;
+  text-align: left;
 }
-.room-select:hover {
+
+.room-toggle-btn:hover {
   background-color: var(--color-bg-accent);
 }
+
+.room-toggle-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.dropdown-arrow {
+  margin-left: 1rem;
+  font-size: 0.7rem;
+  color: var(--color-text-secondary);
+  transform: translateY(1px);
+}
+
+.room-menu-dropdown {
+  position: absolute;
+  top: 110%;
+  left: 0;
+  width: 100%;
+  background-color: var(--color-bg-surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  border: 1px solid var(--color-border);
+  padding: var(--space-2);
+  z-index: 2000;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.room-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: var(--space-3);
+  background: none;
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  transition: all 0.2s;
+}
+
+.room-item:hover, .room-item.is-active {
+  background-color: var(--color-bg-accent);
+  color: var(--color-primary);
+}
+
 .select-arrow {
   position: absolute;
   right: 1rem;
@@ -776,9 +957,51 @@ onMounted(async () => {
 
 .week-nav {
   display: flex;
+  align-items: center;
   background-color: var(--color-bg-secondary);
   border-radius: var(--radius-full);
   padding: 4px;
+  border: 1px solid transparent;
+   gap: var(--space-2);
+}
+
+.week-selector {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.hidden-date-input {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  pointer-events: none;
+  z-index: -1;
+  border: 0;
+}
+
+.current-week-btn {
+  background: transparent;
+  border: none;
+  color: var(--color-text-primary);
+  font-weight: 700;
+  font-size: 0.95rem;
+  padding: 0.4rem 1rem;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.current-week-btn:hover {
+  background-color: var(--color-bg-accent);
+  color: var(--color-primary);
+}
+
+.nav-btn {
   border: 1px solid transparent;
 }
 
