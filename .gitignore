@@ -47,3 +47,5 @@ Thumbs.db
 
 # Docker / Local backups
 *.swp
+
+package-lock*

@@ -1,4 +1,4 @@
-# --- STAGE 1: Build ---
+# STAGE 1
 FROM node:22-alpine AS build-stage
 WORKDIR /app
 
@@ -10,15 +10,20 @@ RUN npm install
 COPY . .
 RUN npm run build
 
-# --- STAGE 2: Production ---
+# STAGE 2
 FROM nginx:alpine AS production-stage
 
 # Kopiere die gebauten statischen Dateien aus der ersten Stage
 # Vite speichert das Ergebnis standardmäßig in /app/dist
 COPY --from=build-stage /app/dist /usr/share/nginx/html
 
-# Port 80 für Web-Traffic
+# Port 80,443 für Web-Traffic (5173 für Vite-Dev-Server)
 EXPOSE 80
+EXPOSE 443
 EXPOSE 5173
 
-CMD ["nginx", "-g", "daemon off;"]
+# Starten von Nginx
+CMD ["nginx", "-g", "daemon off;"] 
+
+
+
