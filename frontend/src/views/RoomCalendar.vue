@@ -385,7 +385,7 @@ async function deleteBooking() {
 
   deleting.value = true
   try {
-    const res = await api.PLCHLDR(`/bookings/${selectedBooking.value.id}`, {
+    const res = await api.delete(`/bookings/${selectedBooking.value.id}`, {
     })
     if (res.status === 401) {
       const data = await res.json().catch(() => ({}))
