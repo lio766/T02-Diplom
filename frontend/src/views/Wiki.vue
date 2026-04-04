@@ -1,10 +1,29 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-const { t } = useI18n()
+const { t, tm, rt } = useI18n()
 
 const activeTopic = ref('booking')
+const openFaqIndex = ref(null)
+
+function toggleFaq(index) {
+  openFaqIndex.value = openFaqIndex.value === index ? null : index
+}
+
+const groupedFaqs = computed(() => {
+  const items = tm('wiki.faqItems') || []
+  const groups = {}
+  
+  items.forEach((item, index) => {
+      const catKey = rt(item.cat)
+      if (!groups[catKey]) groups[catKey] = []
+      // We store the original global index to keep open state working correctly
+      groups[catKey].push({ ...item, originalIndex: index })
+  })
+  
+  return groups
+})
 
 const topics = [
   { id: 'booking', titleKey: 'wiki.topics.booking' },
@@ -78,9 +97,26 @@ const topics = [
 
         <div v-if="activeTopic === 'faq'" class="wiki-article fade-in">
            <h2 class="article-title">{{ $t('wiki.topics.faq') }}</h2>
-           <div class="skeleton-block text short"></div>
-           <div class="skeleton-block text short"></div>
-           <div class="skeleton-block text short"></div>
+           
+           <div class="faq-list">
+              <div v-for="(categoryItems, categoryKey) in groupedFaqs" :key="categoryKey" class="faq-category-group">
+                <h3 class="faq-category-title">{{ t(`wiki.faqCategories.${categoryKey}`) }}</h3>
+                <div 
+                  v-for="item in categoryItems" 
+                  :key="item.originalIndex" 
+                  class="faq-item"
+                  :class="{ 'is-open': openFaqIndex === item.originalIndex }"
+                >
+                  <button class="faq-question-btn" @click="toggleFaq(item.originalIndex)">
+                    <span class="question-text">{{ rt(item.q) }}</span>
+                    <span class="chevron">▼</span>
+                  </button>
+                  <div class="faq-answer-wrapper" :style="{ maxHeight: openFaqIndex === item.originalIndex ? '200px' : '0' }">
+                     <p class="faq-answer">{{ rt(item.a) }}</p>
+                  </div>
+                </div>
+             </div>
+           </div>
         </div>
       </main>
     </div>
@@ -184,6 +220,68 @@ const topics = [
 .tutorial-step h4 {
   margin-bottom: var(--space-3);
   color: var(--color-text-primary);
+}
+
+.faq-category-group {
+  margin-bottom: var(--space-6);
+}
+
+.faq-category-title {
+  font-size: 1.2rem;
+  color: var(--color-primary);
+  margin-bottom: var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: var(--space-2);
+}
+
+.faq-item {
+  background: var(--color-bg-secondary);
+  border-radius: var(--radius-lg);
+  margin-bottom: var(--space-3);
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.faq-question-btn {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-4);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  font-size: 1rem;
+}
+
+.faq-question-btn:hover {
+  background-color: rgba(0,0,0,0.02);
+}
+
+.chevron {
+  transition: transform 0.3s ease;
+  opacity: 0.5;
+}
+
+.faq-item.is-open .chevron {
+  transform: rotate(180deg);
+  opacity: 1;
+}
+
+.faq-answer-wrapper {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease-out;
+}
+
+.faq-answer {
+  padding: 0 var(--space-4) var(--space-4) var(--space-4);
+  margin: 0;
+  color: var(--color-text-secondary);
+  line-height: 1.6;
 }
 
 /* Skeletons */

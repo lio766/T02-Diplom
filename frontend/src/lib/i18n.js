@@ -242,6 +242,18 @@ const messages = {
         admin: 'Administration',
         faq: 'Häufige Fragen'
       },
+      faqCategories: {
+         general: 'Allgemein',
+         booking: 'Buchung & Stornierung',
+         account: 'Konto & Sicherheit'
+      },
+      faqItems: [
+        { cat: 'account', q: 'Wie kann ich mein Passwort ändern?', a: 'Wenden Sie sich bitte an den Administrator, da die Benutzerverwaltung zentral gesteuert wird.' },
+        { cat: 'booking', q: 'Kann ich eine Buchung stornieren?', a: 'Ja, klicken Sie im Kalender auf Ihre Buchung und wählen Sie "Löschen". Dies ist nur für eigene Buchungen möglich.' },
+        { cat: 'general', q: 'Wer sieht meine Buchungen?', a: 'Alle Mitarbeiter können sehen, dass ein Raum belegt ist. Die Details sind für alle sichtbar.' },
+        { cat: 'booking', q: 'Wie lange im Voraus kann ich buchen?', a: 'Raumbuchungen sind bis zu 6 Monate im Voraus möglich.' },
+        { cat: 'general', q: 'Was passiert bei Doppelbelegungen?', a: 'Das System verhinder automatisch Doppelbelegungen. Sie erhalten eine Fehlermeldung.' }
+      ],
       placeholders: {
         text: 'Lorem ipsum content for instruction text...',
         video: 'Video Tutorial Placeholder',
@@ -488,6 +500,18 @@ const messages = {
         admin: 'Admin Guide',
         faq: 'FAQ'
       },
+      faqCategories: {
+         general: 'General',
+         booking: 'Booking & Cancellation',
+         account: 'Account & Security'
+      },
+      faqItems: [
+          { cat: 'account', q: 'How can I change my password?', a: 'Please contact the administrator as user management is centrally controlled.' },
+          { cat: 'booking', q: 'Can I cancel a booking?', a: 'Yes, click on your booking in the calendar and select "Delete". This is only possible for your own bookings.' },
+          { cat: 'general', q: 'Who can see my bookings?', a: 'All employees can see that a room is occupied. The details are visible to everyone.' },
+          { cat: 'booking', q: 'How far in advance can I book?', a: 'Room bookings are possible up to 6 months in advance.' },
+          { cat: 'general', q: 'What happens with double bookings?', a: 'The system automatically prevents double bookings. You will receive an error message.' }
+      ],
       placeholders: {
         text: 'Lorem ipsum content for instruction text...',
         video: 'Video Tutorial Placeholder',
