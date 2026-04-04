@@ -1,13 +1,10 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useKeycloak } from '@josempgon/vue-keycloak';
 
-const { isPending, isAuthenticated, error, username, userId, keycloak, roles, hasRoles } = useKeycloak();
-// Home and Booking components removed
+const { isPending, isAuthenticated, hasRoles } = useKeycloak();
 import RoomCalendar from '../views/RoomCalendar.vue'
 import Wiki from '../views/Wiki.vue'
 import Admin from '../views/Admin.vue'
-
-const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
 const routes = [
     {
@@ -41,13 +38,15 @@ const initRouter = () => {
     })
 
     router.beforeEach(async (to) => {
-        const { isPending, hasRoles, keycloak } = useKeycloak()
 
         while (isPending.value) {
             await new Promise(resolve => setTimeout(resolve, 50))
         }
 
         if (to.meta.roles && !hasRoles(to.meta.roles)) {
+            return { path: '/' }
+        }
+        if (to.meta.requiresAuth && !isAuthenticated.value) {
             return { path: '/' }
         }
     })

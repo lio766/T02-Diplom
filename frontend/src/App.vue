@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import  api from './lib/api.js'
 import { useI18n } from 'vue-i18n'
 
 import { getToken, useKeycloak } from '@josempgon/vue-keycloak';
@@ -10,6 +11,24 @@ const { locale } = useI18n()
 const showDropdown = ref(false)
 const showThemeDropdown = ref(false)
 const currentTheme = ref(localStorage.getItem('theme') || 'light')
+const hasSynced = ref(false); // Guard to ensure it only happens once per session
+
+watch(isAuthenticated, async (newVal) => {
+  if (newVal === true && !hasSynced.value) {
+    try {
+      console.log('User authenticated, initiating sync...');
+      
+      // The call to your backend
+      // Note: Aligning with your previous request for a GET request
+      const res = await api.post('/sync-user'); 
+      
+      console.log('Sync successful:', res.data);
+      hasSynced.value = true; // Mark as done so it doesn't repeat
+    } catch (err) {
+      console.error('User sync failed:', err);
+    }
+  }
+}, { immediate: true }); // 'immediate' checks if they are already logged in on load
 
 onMounted(async () => {
   if(isAuthenticated.value){
@@ -122,7 +141,6 @@ const roleLabel = computed(() => {
   return 'Mitarbeiter'
 })
 
-
 </script>
 
 <template>
@@ -177,7 +195,7 @@ const roleLabel = computed(() => {
                 <button class="user-trigger" @click="toggleDropdown" :aria-label="$t('nav.openMenu')" :aria-expanded="showDropdown">
                   <div class="user-info-text">
                   <span class="user-name">{{ userDisplay }}</span>
-                  <span class="user-role-label" v-if="roleLabel">{{ roleLabel }}</span>
+                  <span class="user-role-label">{{ roleLabel }}</span>
                 </div>
                 <div class="user-avatar">{{ userInitials }}</div>
               </button>

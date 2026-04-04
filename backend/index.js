@@ -28,21 +28,7 @@ const DB_CONFIG = {
     connectionLimit: 10,
 }
 
-let pool
-
-async function ensureDefaultDepartmentId(abteilungId) {
-    let deptId = abteilungId
-    if (deptId == null) {
-        const [deptRows] = await pool.query('SELECT Abteilung_Id AS id FROM Abteilungen WHERE Name = ? LIMIT 1', ['Allgemein'])
-        if (!deptRows.length) {
-            const [insertDept] = await pool.query('INSERT INTO Abteilungen (Name, Parent_Abt) VALUES (?, ?)', ['Allgemein', null])
-            deptId = insertDept.insertId
-        } else {
-            deptId = deptRows[0].id
-        }
-    }
-    return deptId
-}
+let pool;
 
 async function initDb() {
     pool = mysql.createPool(DB_CONFIG)
@@ -137,7 +123,7 @@ function parseParticipantsFromBody(body) {
 
 // GET /bookings -> list bookings with room and optional person name
 // List rooms
-app.get('/rooms', authenticate, async (req, res) => {
+app.get('/api/rooms', authenticate, async (req, res) => {
     console.log('GET /rooms called')
     try {
         const [rows] = await pool.query('SELECT Raum_Id AS id, Bezeichnung AS name, Standort, Kapazitaet FROM Raum ORDER BY Bezeichnung ASC')
@@ -188,7 +174,7 @@ async function createRoomHandler(req, res) {
 }
 
 // Admin: create new room, auth + role required
-app.post('/admin/rooms', authenticate, requireRole("administrator"), createRoomHandler)
+app.post('/api/admin/rooms', authenticate, requireRole("administrator"), createRoomHandler)
 
 async function updateBookingHandler(req, res) {
     try {
@@ -271,24 +257,8 @@ async function deleteBookingHandler(req, res) {
 }
 
 // Admin: update/delete bookings
-app.put('/bookings/:id', authenticate, requireRole("administrator"), updateBookingHandler)
 app.put('/api/bookings/:id', authenticate, requireRole("administrator"), updateBookingHandler)
-app.delete('/bookings/:id', authenticate, requireRole("administrator"), deleteBookingHandler)
 app.delete('/api/bookings/:id', authenticate, requireRole("administrator"), deleteBookingHandler)
-
-app.get('/api/rooms', async (req, res) => {
-    /*
-    try {
-    console.log('GET /api/rooms called')
-        const [rows] = await pool.query('SELECT Raum_Id AS id, Bezeichnung AS name, Standort, Kapazitaet FROM Raum ORDER BY Bezeichnung ASC')
-        res.json(rows)
-    } catch (err) {
-        console.error('GET /api/rooms error:', err)
-        res.status(500).json({ error: 'Fehler beim Laden der Räume' })
-    }
-    */
-    console.log('GET /api/rooms called')
-})
 
 async function searchUsersHandler(req, res) {
     try {
@@ -325,10 +295,60 @@ async function searchUsersHandler(req, res) {
 }
 
 // Users search (for booking participants). Auth required.
-app.get('/users', authenticate, searchUsersHandler)
 app.get('/api/users', authenticate, searchUsersHandler)
 
-app.get('/bookings', authenticate, async (req, res) => {
+app.post('/api/sync-user', authenticate, syncUser)
+
+async function syncUser(req, res, next) {
+    console.log('Syncing user from token:', req.user)
+    try {
+        // 1. Extract data from the Keycloak token (req.user)
+        // sub is the standard OIDC field for the unique Keycloak_Id
+        const { sub, given_name, family_name, email, realm_access } = req.user;
+        let roles = realm_access && Array.isArray(realm_access.roles) ? realm_access.roles : [];
+        let rollen_id = await getRoleID(roles);
+
+        if (!sub || !email) {
+            return res.status(400).json({ error: "Missing user information in token." });
+        }
+
+        // 3. Perform the Upsert logic
+        // We use ON DUPLICATE KEY UPDATE to refresh roles if they changed in Keycloak
+        const sql = `
+      INSERT INTO Benutzer (Keycloak_Id, Vorname, Nachname, Email, Rollen_Id)
+      VALUES (?, ?, ?, ?, ?)
+      ON DUPLICATE KEY UPDATE
+        Vorname = VALUES(Vorname),
+        Nachname = VALUES(Nachname),
+        Email = VALUES(Email),
+        Rollen_Id = VALUES(Rollen_Id);
+    `;
+
+        await pool.query(sql, [
+            sub,
+            given_name || '',
+            family_name || '',
+            email,
+            rollen_id,
+        ]);
+
+    } catch (error) {
+        console.error("Error syncing user:", error);
+        res.status(500).json({ error: "Internal Server Error during user sync." });
+    }
+}
+
+async function getRoleID(keycloakRoles) {
+    // Mapping of Keycloak roles to Rollen_Id in our database, Ids: 1 = Mitarbeiter, 2 = Genehmiger, 3 = Administrator, default to 1 if no match
+    let roleID;
+    if (keycloakRoles.includes("administrator")) roleID = 3;
+    else if (keycloakRoles.includes("genehmiger")) roleID = 2;
+    else roleID = 1;
+    return roleID;
+}
+
+app.get('/api/bookings', authenticate, async (req, res) => {
+    console.log(req);
     try {
         const roomId = req.query.room_id != null && String(req.query.room_id).trim() !== ''
             ? Number(req.query.room_id)
@@ -345,14 +365,14 @@ app.get('/bookings', authenticate, async (req, res) => {
         const params = []
 
         if (mine) {
-             const email = req.user.email
-             const [uRows] = await pool.query('SELECT Benutzer_Id AS id FROM Benutzer WHERE LOWER(Email) = ? LIMIT 1', [String(email).toLowerCase()])
-             if (!uRows.length) {
-                 return res.json([])
-             }
-             const userId = uRows[0].id
-             where.push('EXISTS (SELECT 1 FROM Buchung_Benutzer bb_mine WHERE bb_mine.Buchung_Id = b.Buchung_Id AND bb_mine.Benutzer_Id = ?)')
-             params.push(userId)
+            const email = req.user.email
+            const [uRows] = await pool.query('SELECT Benutzer_Id AS id FROM Benutzer WHERE LOWER(Email) = ? LIMIT 1', [String(email).toLowerCase()])
+            if (!uRows.length) {
+                return res.json([])
+            }
+            const userId = uRows[0].id
+            where.push('EXISTS (SELECT 1 FROM Buchung_Benutzer bb_mine WHERE bb_mine.Buchung_Id = b.Buchung_Id AND bb_mine.Benutzer_Id = ?)')
+            params.push(userId)
         } else if (roomId != null && Number.isFinite(roomId)) {
             where.push('b.Raum_Id = ?')
             params.push(roomId)
@@ -428,99 +448,11 @@ app.get('/bookings', authenticate, async (req, res) => {
     }
 })
 
-app.get('/api/bookings', async (req, res) => {
-    try {
-        const roomId = req.query.room_id != null && String(req.query.room_id).trim() !== ''
-            ? Number(req.query.room_id)
-            : null
-        const from = req.query.from != null && String(req.query.from).trim() !== ''
-            ? String(req.query.from).trim()
-            : null
-        const to = req.query.to != null && String(req.query.to).trim() !== ''
-            ? String(req.query.to).trim()
-            : null
-
-        const where = []
-        const params = []
-        if (roomId != null && Number.isFinite(roomId)) {
-            where.push('b.Raum_Id = ?')
-            params.push(roomId)
-        }
-        if (from && to) {
-            where.push('b.Startzeit >= ? AND b.Startzeit <= ?')
-            params.push(`${from} 00:00:00`, `${to} 23:59:59`)
-        } else if (from) {
-            where.push('b.Startzeit >= ?')
-            params.push(`${from} 00:00:00`)
-        } else if (to) {
-            where.push('b.Startzeit <= ?')
-            params.push(`${to} 23:59:59`)
-        }
-
-        const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
-        const [rows] = await pool.query(
-            `SELECT 
-				 b.Buchung_Id AS id,
-				 b.Raum_Id AS room_id,
-				 r.Bezeichnung AS room,
-				 DATE_FORMAT(b.Startzeit, '%Y-%m-%d') AS date,
-				 DATE_FORMAT(b.Startzeit, '%H:%i') AS start_time,
-				 DATE_FORMAT(b.Endzeit, '%H:%i') AS end_time,
-				 b.Name AS name,
-				 b.Beschreibung AS beschreibung,
-				 GROUP_CONCAT(DISTINCT CONCAT(
-					 u.Benutzer_Id, '::', COALESCE(u.Email,''), '::',
-					 TRIM(CONCAT(COALESCE(u.Vorname,''), ' ', COALESCE(u.Nachname,'')))
-				 ) SEPARATOR '||') AS participants_raw
-			 FROM Buchungen b
-			 JOIN Raum r ON r.Raum_Id = b.Raum_Id
-			 LEFT JOIN Buchung_Benutzer bb ON bb.Buchung_Id = b.Buchung_Id
-			 LEFT JOIN Benutzer u ON u.Benutzer_Id = bb.Benutzer_Id
-			 ${whereSql}
-			 GROUP BY b.Buchung_Id
-			 ORDER BY b.Startzeit DESC`,
-            params
-        )
-        const data = rows.map((r) => {
-            const parts = String(r.participants_raw || '')
-                .split('||')
-                .map((x) => x.trim())
-                .filter(Boolean)
-                .map((x) => {
-                    const [idStr, email, name] = x.split('::')
-                    const id = Number(idStr)
-                    return {
-                        id: Number.isFinite(id) ? id : null,
-                        email: email || '',
-                        name: (name || '').trim(),
-                    }
-                })
-                .filter((p) => p.id != null)
-            return {
-                id: r.id,
-                room_id: r.room_id,
-                room: r.room,
-                date: r.date,
-                start_time: r.start_time,
-                end_time: r.end_time,
-                name: r.name,
-                beschreibung: r.beschreibung,
-                participants: parts,
-                person: parts.map((p) => p.name || p.email).filter(Boolean).join(', '),
-            }
-        })
-        res.json(data)
-    } catch (err) {
-        console.error('GET /api/bookings error:', err)
-        res.status(500).json({ error: 'Fehler beim Laden der Buchungen' })
-    }
-})
-
 // POST /bookings -> create booking, optional link to Benutzer
-app.post('/bookings', authenticate, async (req, res) => {
+app.post('/api/bookings', authenticate, async (req, res) => {
     try {
         console.log('POST /bookings called with body:', req.body)
-        const { room, room_id, date, start_time, end_time, name, beschreibung} = req.body || {}
+        const { room, room_id, date, start_time, end_time, name, beschreibung } = req.body || {}
         const authUserId = req.user.id
         const participantEmails = parseParticipantsFromBody(req.body)
 
@@ -611,213 +543,6 @@ app.post('/bookings', authenticate, async (req, res) => {
     }
 })
 
-app.post('/api/bookings', authenticate, async (req, res) => {
-    try {
-        const { room, room_id, date, start_time, end_time, name, beschreibung } = req.body || {}
-        const authUserId = req.user.id
-        const participantEmails = parseParticipantsFromBody(req.body)
-
-        if ((!room && !room_id) || !date || !start_time || !end_time || !name) {
-            return res.status(400).json({ error: 'Felder (room oder room_id), date, start_time, end_time, name sind erforderlich' })
-        }
-        const startTs = `${date} ${start_time}:00`
-        const endTs = `${date} ${end_time}:00`
-        if (endTs <= startTs) {
-            return res.status(400).json({ error: 'Endzeit muss nach der Startzeit liegen.' })
-        }
-
-        let raumId = room_id
-        if (!raumId) {
-            raumId = await getRoomIdByName(room)
-        }
-        if (!raumId) {
-            return res.status(404).json({ error: `Raum nicht gefunden` })
-        }
-
-        if (await hasConflict(raumId, startTs, endTs)) {
-            return res.status(409).json({ error: 'Zeitfenster belegt' })
-        }
-
-        const status = 'Geplant'
-        const prioritaet = 1
-        const nameFinal = String(name || '').trim()
-        const beschreibungFinal = String(beschreibung || '').trim() || null
-
-        const conn = await pool.getConnection()
-        try {
-            await conn.beginTransaction()
-            const [ins] = await conn.query(
-                'INSERT INTO Buchungen (Raum_Id, Startzeit, Endzeit, Status, Prioritaet, Name, Beschreibung) VALUES (?, ?, ?, ?, ?, ?, ?)',
-                [raumId, startTs, endTs, status, prioritaet, nameFinal, beschreibungFinal]
-            )
-            const bookingId = ins.insertId
-
-            const { users, unknown } = await resolveUserIdsByEmails(participantEmails)
-            if (unknown.length) {
-                await conn.rollback()
-                return res.status(400).json({ error: `Unbekannte Teilnehmer: ${unknown.join(', ')}`, unknown })
-            }
-
-            const userIds = Array.from(new Set([authUserId, ...users.map((u) => u.id)].filter((x) => Number.isFinite(Number(x)))))
-            for (const uid of userIds) {
-                try {
-                    await conn.query('INSERT INTO Buchung_Benutzer (Buchung_Id, Benutzer_Id) VALUES (?, ?)', [bookingId, uid])
-                } catch (_) { }
-            }
-
-            await conn.commit()
-
-            const recipientEmail = String(req.user?.email || '').trim()
-            if (recipientEmail) {
-                try {
-                    const resolvedRoomName = room || await getRoomNameById(raumId) || `Raum ${raumId}`
-                    await sendMail(
-                        recipientEmail,
-                        `AGORA Buchung ausstehend - ${nameFinal}`,
-                        'booking-pending',
-                        {
-                            room_name: resolvedRoomName,
-                            date: String(date),
-                            start_time: String(start_time),
-                            end_time: String(end_time),
-                            booking_name: nameFinal,
-                            description: beschreibungFinal,
-                            participants: participantEmails,
-                            requester_name: String(req.user?.name || req.user?.preferred_username || req.user?.email || '').trim(),
-                        }
-                    )
-                } catch (mailErr) {
-                    console.error('Pending mail send failed:', mailErr)
-                }
-            }
-
-            return res.status(201).json({ id: bookingId })
-        } finally {
-            conn.release()
-        }
-    } catch (err) {
-        console.error('POST /api/bookings error:', err)
-        res.status(500).json({ error: 'Fehler beim Speichern der Buchung' })
-    }
-})
-
-// Resolve Mitarbeiter role id from existing roles table (capitalized: Rollen)
-async function getMitarbeiterRoleId() {
-    const [rows] = await pool.query('SELECT Rollen_Id AS id FROM Rollen WHERE Name = ? LIMIT 1', ['Mitarbeiter'])
-    if (rows.length) return rows[0].id
-    // Fallback: Rolle anlegen, falls nicht vorhanden
-    const [ins] = await pool.query('INSERT INTO Rollen (Name, Prioritaet) VALUES (?, ?)', ['Mitarbeiter', 1])
-    return ins.insertId
-}
-
-// Registration: creates entry in `Benutzer`, default role = Mitarbeiter
-/*
-app.post('/register', async (req, res) => {
-    try {
-        const { email, password, vorname, nachname, abteilung_id } = req.body || {}
-        if (!email) return res.status(400).json({ error: 'E-Mail erforderlich' })
-        if (!password) return res.status(400).json({ error: 'Passwort erforderlich' })
-        if (String(password).length < 6) return res.status(400).json({ error: 'Passwort muss mindestens 6 Zeichen lang sein' })
-        if (!vorname || !nachname) return res.status(400).json({ error: 'Vorname und Nachname erforderlich' })
-
-        const [existing] = await pool.query('SELECT Benutzer_Id AS id FROM Benutzer WHERE Email = ? LIMIT 1', [email])
-        if (existing.length) return res.status(409).json({ error: 'E-Mail ist bereits registriert' })
-
-        const deptId = await ensureDefaultDepartmentId(abteilung_id)
-        const roleId = await getMitarbeiterRoleId()
-        const pwHash = hashPassword(password)
-
-        const [result] = await pool.query(
-            'INSERT INTO Benutzer (Vorname, Nachname, Email, Passwort_Hash, Rollen_Id, Abteilung_Id) VALUES (?, ?, ?, ?, ?, ?)',
-            [String(vorname), String(nachname), String(email), pwHash, roleId, deptId]
-        )
-
-        const token = signToken({ uid: result.insertId, iat: Date.now(), exp: Date.now() + (7 * 24 * 60 * 60 * 1000) })
-        const info = await getUserRoleInfo(result.insertId)
-        return res.status(201).json({
-            benutzer_id: result.insertId,
-            email,
-            rollen_id: roleId,
-            rollen_name: info?.rollen_name || null,
-            prioritaet: info?.prioritaet ?? null,
-            is_admin: isAdminRole(info),
-            token,
-        })
-    } catch (err) {
-        console.error('POST /register error:', err)
-        res.status(500).json({ error: 'Registrierung fehlgeschlagen' })
-    }
-})
-*/
-
-// Login route: verifies password (no auto-create)
-/*
-app.post('/login', async (req, res) => {
-    try {
-        const { email, password } = req.body || {}
-        if (!email) {
-            return res.status(400).json({ error: 'E-Mail erforderlich' })
-        }
-        if (!password) {
-            return res.status(400).json({ error: 'Passwort erforderlich' })
-        }
-
-        const [rows] = await pool.query('SELECT Benutzer_Id, Rollen_Id, Passwort_Hash FROM Benutzer WHERE Email = ? LIMIT 1', [email])
-        if (!rows.length) {
-            return res.status(401).json({ error: 'E-Mail oder Passwort falsch' })
-        }
-        const user = rows[0]
-        if (!verifyPassword(user.Passwort_Hash, password)) {
-            return res.status(401).json({ error: 'E-Mail oder Passwort falsch' })
-        }
-
-        const token = signToken({ uid: user.Benutzer_Id, iat: Date.now(), exp: Date.now() + (7 * 24 * 60 * 60 * 1000) })
-        const info = await getUserRoleInfo(user.Benutzer_Id)
-        return res.json({
-            benutzer_id: user.Benutzer_Id,
-            email,
-            rollen_id: user.Rollen_Id,
-            rollen_name: info?.rollen_name || null,
-            prioritaet: info?.prioritaet ?? null,
-            is_admin: isAdminRole(info),
-            token,
-        })
-    } catch (err) {
-        console.error('POST /login error:', err)
-        res.status(500).json({ error: 'Login fehlgeschlagen' })
-    }
-})
-
-app.post('/api/login', async (req, res) => {
-    try {
-        const { email, password } = req.body || {}
-        if (!email) return res.status(400).json({ error: 'E-Mail erforderlich' })
-        if (!password) return res.status(400).json({ error: 'Passwort erforderlich' })
-
-        const [rows] = await pool.query('SELECT Benutzer_Id, Rollen_Id, Passwort_Hash FROM Benutzer WHERE Email = ? LIMIT 1', [email])
-        if (!rows.length) return res.status(401).json({ error: 'E-Mail oder Passwort falsch' })
-        const user = rows[0]
-        if (!verifyPassword(user.Passwort_Hash, password)) {
-            return res.status(401).json({ error: 'E-Mail oder Passwort falsch' })
-        }
-
-        const token = signToken({ uid: user.Benutzer_Id, iat: Date.now(), exp: Date.now() + (7 * 24 * 60 * 60 * 1000) })
-        const info = await getUserRoleInfo(user.Benutzer_Id)
-        return res.json({
-            benutzer_id: user.Benutzer_Id,
-            email,
-            rollen_id: user.Rollen_Id,
-            rollen_name: info?.rollen_name || null,
-            prioritaet: info?.prioritaet ?? null,
-            is_admin: isAdminRole(info),
-            token,
-        })
-    } catch (err) {
-        console.error('POST /api/login error:', err)
-        res.status(500).json({ error: 'Login fehlgeschlagen' })
-    }
-})
-*/
 
 initDb()
     .then(() => checkDbConnection())
