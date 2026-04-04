@@ -320,6 +320,18 @@ function parseEmails(text) {
     .filter(Boolean)
 }
 
+function getAxiosErrorMessage(e, fallback) {
+  const status = e?.response?.status
+  const apiError = e?.response?.data?.error
+
+  if (status === 401) return apiError || t('calendar.messages.loginRequired')
+  if (status === 403) return apiError || t('calendar.messages.adminRequired')
+  if (status === 404) return apiError || t('calendar.messages.notFound')
+  if (status === 409) return apiError || t('calendar.messages.occupied')
+
+  return apiError || e?.message || fallback
+}
+
 async function saveBooking() {
   detailMsg.value = ''
   detailErr.value = ''
@@ -338,7 +350,7 @@ async function saveBooking() {
 
   saving.value = true
   try {
-    const res = await api.post(`/bookings/${selectedBooking.value.id}`, {
+    await api.put(`/bookings/${selectedBooking.value.id}`, {
         room_id: Number(editRoomId.value),
         date: editDate.value,
         start_time: editStart.value,
@@ -348,25 +360,11 @@ async function saveBooking() {
         participant_emails: parseEmails(editParticipants.value),
     })
 
-    if (res.status === 204) {
-      // shouldn't happen for PUT, but handle gracefully
-      detailMsg.value = t('calendar.messages.saved')
-      await loadBookings()
-      closeDetails()
-      return
-    }
-
-    const data = await res.data.catch(() => ({}))
-    if (res.status === 401) throw new Error(data.error || t('calendar.messages.loginRequired'))
-    if (res.status === 403) throw new Error(data.error || t('calendar.messages.adminRequired'))
-    if (res.status === 409) throw new Error(data.error || t('calendar.messages.occupied'))
-    if (!res.ok) throw new Error(data.error || t('common.error'))
-
     detailMsg.value = t('calendar.messages.changesSaved')
     await loadBookings()
     closeDetails()
   } catch (e) {
-    detailErr.value = e.message
+    detailErr.value = getAxiosErrorMessage(e, t('common.error'))
   } finally {
     saving.value = false
   }
@@ -385,29 +383,12 @@ async function deleteBooking() {
 
   deleting.value = true
   try {
-    const res = await api.delete(`/bookings/${selectedBooking.value.id}`, {
-    })
-    if (res.status === 401) {
-      const data = await res.json().catch(() => ({}))
-      throw new Error(data.error || t('calendar.messages.loginRequired'))
-    }
-    if (res.status === 403) {
-      const data = await res.json().catch(() => ({}))
-      throw new Error(data.error || t('calendar.messages.adminRequired'))
-    }
-    if (res.status === 404) {
-      const data = await res.json().catch(() => ({}))
-      throw new Error(data.error || t('calendar.messages.notFound'))
-    }
-    if (res.status !== 204 && !res.ok) {
-      const data = await res.json().catch(() => ({}))
-      throw new Error(data.error || t('calendar.messages.deleteError'))
-    }
+    await api.delete(`/bookings/${selectedBooking.value.id}`)
 
     await loadBookings()
     closeDetails()
   } catch (e) {
-    detailErr.value = e.message
+    detailErr.value = getAxiosErrorMessage(e, t('calendar.messages.deleteError'))
   } finally {
     deleting.value = false
   }

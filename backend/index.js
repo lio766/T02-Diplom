@@ -110,6 +110,28 @@ async function resolveUserIdsByEmails(emails) {
     return { users, unknown }
 }
 
+async function getBenutzerIdForRequestUser(user) {
+    const email = String(user?.email || '').trim().toLowerCase()
+    if (email) {
+        const [rowsByEmail] = await pool.query(
+            'SELECT Benutzer_Id AS id FROM Benutzer WHERE LOWER(Email) = ? LIMIT 1',
+            [email]
+        )
+        if (rowsByEmail.length) return rowsByEmail[0].id
+    }
+
+    const keycloakId = String(user?.sub || '').trim()
+    if (keycloakId) {
+        const [rowsBySub] = await pool.query(
+            'SELECT Benutzer_Id AS id FROM Benutzer WHERE Keycloak_Id = ? LIMIT 1',
+            [keycloakId]
+        )
+        if (rowsBySub.length) return rowsBySub[0].id
+    }
+
+    return null
+}
+
 function parseParticipantsFromBody(body) {
     const b = body || {}
     const raw = b.participant_emails ?? b.participants_emails ?? b.participantsEmails ?? b.participants
@@ -264,18 +286,37 @@ async function searchUsersHandler(req, res) {
     try {
         const q = req.query.q != null ? String(req.query.q).trim().toLowerCase() : ''
         const limit = Math.min(50, Math.max(1, Number(req.query.limit || 15)))
+        const currentEmail = String(req.user?.email || '').trim().toLowerCase()
+        const currentSub = String(req.user?.sub || '').trim()
 
         let sql = `SELECT Benutzer_Id AS id, Email AS email, Vorname AS vorname, Nachname AS nachname
 			FROM Benutzer`
         const params = []
+        const whereParts = []
+
         if (q) {
             const like = `%${q}%`
-            sql += ` WHERE LOWER(Email) LIKE ?
+            whereParts.push(`(LOWER(Email) LIKE ?
 				OR LOWER(Vorname) LIKE ?
 				OR LOWER(Nachname) LIKE ?
-				OR LOWER(CONCAT(Vorname, ' ', Nachname)) LIKE ?`
+				OR LOWER(CONCAT(Vorname, ' ', Nachname)) LIKE ?)`)
             params.push(like, like, like, like)
         }
+
+        if (currentEmail) {
+            whereParts.push('LOWER(Email) <> ?')
+            params.push(currentEmail)
+        }
+
+        if (currentSub) {
+            whereParts.push('Keycloak_Id <> ?')
+            params.push(currentSub)
+        }
+
+        if (whereParts.length) {
+            sql += ` WHERE ${whereParts.join(' AND ')}`
+        }
+
         sql += ` ORDER BY Nachname ASC, Vorname ASC LIMIT ?`
         params.push(limit)
 
@@ -365,14 +406,12 @@ app.get('/api/bookings', authenticate, async (req, res) => {
         const params = []
 
         if (mine) {
-            const email = req.user.email
-            const [uRows] = await pool.query('SELECT Benutzer_Id AS id FROM Benutzer WHERE LOWER(Email) = ? LIMIT 1', [String(email).toLowerCase()])
-            if (!uRows.length) {
+            const benutzerId = await getBenutzerIdForRequestUser(req.user)
+            if (!Number.isFinite(Number(benutzerId))) {
                 return res.json([])
             }
-            const userId = uRows[0].id
             where.push('EXISTS (SELECT 1 FROM Buchung_Benutzer bb_mine WHERE bb_mine.Buchung_Id = b.Buchung_Id AND bb_mine.Benutzer_Id = ?)')
-            params.push(userId)
+            params.push(Number(benutzerId))
         } else if (roomId != null && Number.isFinite(roomId)) {
             where.push('b.Raum_Id = ?')
             params.push(roomId)
@@ -453,7 +492,7 @@ app.post('/api/bookings', authenticate, async (req, res) => {
     try {
         console.log('POST /bookings called with body:', req.body)
         const { room, room_id, date, start_time, end_time, name, beschreibung } = req.body || {}
-        const authUserId = req.user.id
+        const authUserId = await getBenutzerIdForRequestUser(req.user)
         const participantEmails = parseParticipantsFromBody(req.body)
 
         if ((!room && !room_id) || !date || !start_time || !end_time || !name) {
@@ -481,7 +520,7 @@ app.post('/api/bookings', authenticate, async (req, res) => {
 
         // Default values
         const status = 'Geplant'
-        const prioritaet = 1
+        
         const nameFinal = String(name || '').trim()
         const beschreibungFinal = String(beschreibung || '').trim() || null
 
@@ -489,8 +528,8 @@ app.post('/api/bookings', authenticate, async (req, res) => {
         try {
             await conn.beginTransaction()
             const [ins] = await conn.query(
-                'INSERT INTO Buchungen (Raum_Id, Startzeit, Endzeit, Status, Prioritaet, Name, Beschreibung) VALUES (?, ?, ?, ?, ?, ?, ?)',
-                [raumId, startTs, endTs, status, prioritaet, nameFinal, beschreibungFinal]
+                'INSERT INTO Buchungen (Raum_Id, Startzeit, Endzeit, Status, Name, Beschreibung) VALUES (?, ?, ?, ?, ?, ?)',
+                [raumId, startTs, endTs, status, nameFinal, beschreibungFinal]
             )
             const bookingId = ins.insertId
 
@@ -500,7 +539,9 @@ app.post('/api/bookings', authenticate, async (req, res) => {
                 return res.status(400).json({ error: `Unbekannte Teilnehmer: ${unknown.join(', ')}`, unknown })
             }
 
-            const userIds = Array.from(new Set([authUserId, ...users.map((u) => u.id)].filter((x) => Number.isFinite(Number(x)))))
+            const userIds = Array.from(
+                new Set([authUserId, ...users.map((u) => u.id)].filter((x) => Number.isFinite(Number(x))))
+            )
             for (const uid of userIds) {
                 try {
                     await conn.query('INSERT INTO Buchung_Benutzer (Buchung_Id, Benutzer_Id) VALUES (?, ?)', [bookingId, uid])

@@ -66,18 +66,17 @@ async function searchUsers(q) {
   currentAbort = new AbortController()
 
   try {
-    const url = new URL(`/users`)
-    if (q) url.searchParams.set('q', q)
-    url.searchParams.set('limit', '12')
+    const params = { limit: 12 }
+    if (q) params.q = q
 
-    const res = await api.get(url, {
+    const res = await api.get('/users', {
+      params,
+      signal: currentAbort.signal,
     })
-    if (res.status === 401) throw new Error(t('bookingForm.loginFirst'))
-    if (!res.ok) throw new Error(t('bookingForm.loadUsersError'))
-    const data = await res.data()
+    const data = res.data
     participantResults.value = Array.isArray(data) ? data : []
   } catch (e) {
-    if (e?.name === 'AbortError') return
+    if (e?.name === 'AbortError' || e?.name === 'CanceledError' || e?.code === 'ERR_CANCELED') return
     participantError.value = e.message
     participantResults.value = []
   } finally {
@@ -364,6 +363,12 @@ async function submit() {
 .search-wrapper {
   position: relative;
 }
+
+.participant-section {
+  position: relative;
+  min-width: 0;
+}
+
 .search-dropdown {
   position: absolute;
   top: 100%; left: 0; right: 0;
