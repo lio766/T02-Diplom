@@ -1,0 +1,6 @@
+Testcase:
+2. genehmiger hinzufügen mit nur Raum B, schauen ob er Raum A Buchungen löschen kann;
+
+Fixes:
+Sprache i18n; Dropdown Räume bei Änderungen style anpassen;, Nutzer hinzufügen bei ändernungen; Löschen button + Modal; Farben A++; 
+Unnötige Funktionen löschen; Logo oben links; Wiki implementieren; evtl Error-Modals umstylen;

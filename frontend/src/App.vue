@@ -157,6 +157,7 @@ const roleLabel = computed(() => {
           <div class="main-nav" v-if="isLoggedIn">
              <RouterLink to="/calendar" class="nav-link" active-class="is-active">{{ $t('nav.calendar') }}</RouterLink>
              <RouterLink to="/wiki" class="nav-link" active-class="is-active">{{ $t('nav.wiki') }}</RouterLink>
+             <RouterLink v-if="isGenehmiger" to="/approvals" class="nav-link" active-class="is-active">{{ $t('nav.approvals') }}</RouterLink>
              <RouterLink v-if="isAdmin" to="/admin" class="nav-link admin-link" active-class="is-active">{{ $t('nav.admin') }}</RouterLink>
           </div>
   

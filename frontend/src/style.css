@@ -153,6 +153,83 @@ html.dark-mode textarea {
   border-color: var(--color-border);
 }
 
+.select-wrapper {
+  position: relative;
+  display: inline-block;
+}
+
+.room-dropdown-wrapper {
+  position: relative;
+  min-width: 240px;
+}
+
+.room-toggle-btn {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+  font-weight: 700;
+  font-size: 1.1rem;
+  padding: 0.6rem 1rem;
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: left;
+}
+
+.room-toggle-btn:hover {
+  background-color: var(--color-bg-accent);
+}
+
+.room-toggle-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.dropdown-arrow {
+  margin-left: 1rem;
+  font-size: 0.7rem;
+  color: var(--color-text-secondary);
+  transform: translateY(1px);
+}
+
+.room-menu-dropdown {
+  position: absolute;
+  top: 110%;
+  left: 0;
+  width: 100%;
+  background-color: var(--color-bg-surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  border: 1px solid var(--color-border);
+  padding: var(--space-2);
+  z-index: 2000;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.room-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: var(--space-3);
+  background: none;
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  transition: all 0.2s;
+}
+
+.room-item:hover, .room-item.is-active {
+  background-color: var(--color-bg-accent);
+  color: var(--color-primary);
+}
+
 /* Base Reset & Setup */
 *, *::before, *::after {
   box-sizing: border-box;

@@ -147,6 +147,12 @@ const isGenehmiger = computed(() => {
 const isAdmin = computed(() => {
     return hasRoles(['administrator'])
 })
+const canEditCurrentBooking = computed(() => {
+  return selectedBooking.value && selectedBooking.value.requester_sub === userId.value
+})
+const canDeleteCurrentBooking = computed(() => {
+  return (selectedBooking.value && selectedBooking.value.requester_sub === userId.value) || isGenehmiger.value
+})
 
 const editRoomId = ref('')
 const editDate = ref('')
@@ -160,6 +166,7 @@ const saving = ref(false)
 const deleting = ref(false)
 const detailMsg = ref('')
 const detailErr = ref('')
+const showReapprovalModal = ref(false)
 
 const todayIso = computed(() => toIsoDate(new Date()))
 
@@ -287,6 +294,20 @@ function bookingParticipantsLabel(b) {
   return b?.person || t('calendar.messages.occupied')
 }
 
+function isApprovedStatus(status) {
+  return String(status || '').toLowerCase() === 'genehmigt'
+}
+
+function bookingStatusClass(b) {
+  return isApprovedStatus(b?.status) ? 'is-approved' : 'is-planned'
+}
+
+function bookingStatusLabel(b) {
+  return isApprovedStatus(b?.status)
+    ? t('calendar.status.approved')
+    : t('calendar.status.pending')
+}
+
 function openDetails(b) {
   selectedBooking.value = b
   showDetails.value = true
@@ -338,7 +359,7 @@ async function saveBooking() {
 
   if (!selectedBooking.value?.id) { detailErr.value = t('calendar.messages.noBookingSelected'); return }
   if (!isLoggedIn.value) { detailErr.value = t('calendar.messages.loginRequired'); return }
-  if (!canEditCurrentBooking.value) { detailErr.value = t('calendar.messages.adminRequired'); return }
+  if (!canEditCurrentBooking.value) { detailErr.value = t('calendar.messages.adminRequired') || 'Nur der Ersteller darf bearbeiten'; return }
   if (!editRoomId.value || !editDate.value || !editStart.value || !editEnd.value || !editName.value) {
     detailErr.value = t('calendar.messages.fillAllFields')
     return
@@ -348,6 +369,26 @@ async function saveBooking() {
     return
   }
 
+  if (isApprovedStatus(selectedBooking.value.status)) {
+    // Check if room or time changed
+    if (
+      String(selectedBooking.value.room_id) !== editRoomId.value ||
+      selectedBooking.value.date !== editDate.value ||
+      selectedBooking.value.start_time !== editStart.value + ':00' && selectedBooking.value.start_time !== editStart.value ||
+      selectedBooking.value.end_time !== editEnd.value + ':00' && selectedBooking.value.end_time !== editEnd.value
+    ) {
+      showReapprovalModal.value = true
+      return
+    }
+  }
+
+  executeSaveBooking()
+}
+
+async function executeSaveBooking() {
+  showReapprovalModal.value = false
+  detailMsg.value = ''
+  detailErr.value = ''
   saving.value = true
   try {
     await api.put(`/bookings/${selectedBooking.value.id}`, {
@@ -376,7 +417,7 @@ async function deleteBooking() {
 
   if (!selectedBooking.value?.id) { detailErr.value = t('calendar.messages.noBookingSelected'); return }
   if (!isLoggedIn.value) { detailErr.value = t('calendar.messages.loginRequired'); return }
-  if (!canEditCurrentBooking.value) { detailErr.value = t('calendar.messages.adminRequired'); return }
+  if (!canDeleteCurrentBooking.value) { detailErr.value = t('calendar.messages.deleteRequired') || 'Nur der Ersteller oder ein Genehmiger darf löschen'; return }
 
   const ok = window.confirm(t('calendar.messages.confirmDelete'))
   if (!ok) return
@@ -487,7 +528,7 @@ onMounted(async () => {
         <header class="toolbar">
           <div class="toolbar-group">
             <div class="room-dropdown-wrapper">
-                <button class="room-toggle-btn" @click="toggleRoomDropdown" :title="$t('calendar.selectRoom') || 'Select Room'" :disabled="loadingRooms || onlyMine">
+                <button class="room-toggle-btn" type="button" @click="toggleRoomDropdown" :title="$t('calendar.selectRoom') || 'Select Room'" :disabled="loadingRooms || onlyMine">
                   <span>{{ currentRoomName }}</span>
                   <span class="dropdown-arrow">▼</span>
                 </button>
@@ -496,6 +537,7 @@ onMounted(async () => {
                     <button 
                       v-for="r in rooms" 
                       :key="r.id" 
+                      type="button"
                       @click="selectRoom(r.id)" 
                       class="dropdown-item room-item"
                       :class="{ 'is-active': String(r.id) === roomId }"
@@ -589,6 +631,7 @@ onMounted(async () => {
                          v-for="b in bookingsForDay(d)"
                          :key="b.id"
                          class="booking-item"
+                         :class="bookingStatusClass(b)"
                          :style="bookingStyle(b)"
                          :title="`${b.start_time}–${b.end_time} ${bookingParticipantsLabel(b)}`.trim()"
                          role="button"
@@ -596,7 +639,7 @@ onMounted(async () => {
                          @click="openDetails(b)"
                          @keydown.enter.prevent="openDetails(b)"
                        >
-                          <div class="booking-time">{{ b.start_time }}</div>
+                          <div class="booking-time">{{ b.start_time }} · {{ bookingStatusLabel(b) }}</div>
                           <div class="booking-title">
                              <span v-if="onlyMine && b.room" style="font-weight: bold; margin-right: 4px;">{{ b.room }}:</span>
                              {{ bookingParticipantsLabel(b) }}
@@ -617,6 +660,7 @@ onMounted(async () => {
                        <th>{{ $t('calendar.table.date') }}</th>
                        <th>{{ $t('calendar.table.time') }}</th>
                        <th>{{ $t('calendar.table.room') }}</th>
+                        <th>{{ $t('calendar.table.status') }}</th>
                        <th>{{ $t('calendar.table.title') }}</th>
                        <th style="width: 60px"></th>
                     </tr>
@@ -628,6 +672,9 @@ onMounted(async () => {
                        <td>
                           {{ rooms.find(r => String(r.id) === String(b.room_id))?.name || $t('calendar.table.unknownRoom') }}
                        </td>
+                        <td>
+                          <span class="status-badge" :class="bookingStatusClass(b)">{{ bookingStatusLabel(b) }}</span>
+                        </td>
                        <td>
                           <div class="cell-title" :title="bookingParticipantsLabel(b)">{{ bookingParticipantsLabel(b) }}</div>
                        </td>
@@ -636,7 +683,7 @@ onMounted(async () => {
                        </td>
                     </tr>
                     <tr v-if="sortedBookings.length === 0">
-                       <td colspan="5" class="empty-state">{{ $t('calendar.table.empty') }}</td>
+                        <td colspan="6" class="empty-state">{{ $t('calendar.table.empty') }}</td>
                     </tr>
                  </tbody>
               </table>
@@ -664,6 +711,11 @@ onMounted(async () => {
             </header>
 
             <div v-if="selectedBooking" class="modal-body">
+              <div class="status-row">
+                <span class="label">{{ $t('calendar.modal.status') }}</span>
+                <span class="status-badge" :class="bookingStatusClass(selectedBooking)">{{ bookingStatusLabel(selectedBooking) }}</span>
+              </div>
+
                <template v-if="canEditCurrentBooking">
                   <div class="form-group">
                      <label for="edit-room-id" class="form-label">{{ $t('calendar.modal.room') }}</label>
@@ -733,6 +785,12 @@ onMounted(async () => {
                         <span class="value">{{ toIsoDate(selectedBooking.date) }} <br> {{ selectedBooking.start_time }} – {{ selectedBooking.end_time }}</span>
                      </div>
                   </div>
+                  
+                  <div class="modal-actions" v-if="canDeleteCurrentBooking && !canEditCurrentBooking">
+                     <button class="btn btn-text text-danger" type="button" :disabled="deleting" @click="deleteBooking">
+                        {{ deleting ? $t('calendar.modal.deleting') : $t('calendar.modal.delete') }}
+                     </button>
+                  </div>
                </template>
 
                <div class="detail-section">
@@ -747,7 +805,55 @@ onMounted(async () => {
                </div>
 
                <div v-if="detailMsg" class="message is-success">{{ detailMsg }}</div>
-               <div v-if="detailErr" class="message is-errorCalender">{{ detailErr }}</div>
+            </div>
+         </div>
+      </div>
+    </Teleport>
+
+    <!-- Error Selection Modal -->
+    <Teleport to="body">
+      <div v-if="detailErr" class="modal-backdrop" style="z-index: 10001;" @click.self="detailErr = ''">
+        <div class="modal error-modal" role="dialog" aria-modal="true">
+          <header class="modal-header">
+            <h2 class="modal-title">{{ $t('common.error') || 'Fehler' }}</h2>
+            <button class="close-btn" type="button" @click="detailErr = ''" :aria-label="$t('calendar.modal.close') || 'Schließen'">✕</button>
+          </header>
+
+          <div class="modal-body">
+            <div class="message is-error" style="text-align: center; font-weight: 500; font-size: 1.1rem; border: none; background: transparent; color: var(--color-danger);">
+              {{ detailErr }}
+            </div>
+          </div>
+
+          <div class="modal-actions" style="display: flex; justify-content: flex-end; padding: var(--space-4); border-top: 1px solid var(--color-border); background: var(--color-bg-secondary); border-radius: 0 0 var(--radius-xl) var(--radius-xl);">
+            <button class="btn btn-secondary" type="button" @click="detailErr = ''">OK</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- Re-approval Confirmation Modal -->
+    <Teleport to="body">
+      <div v-if="showReapprovalModal" class="modal-backdrop" @click.self="showReapprovalModal = false">
+         <div class="modal error-modal" role="dialog" aria-modal="true">
+            <header class="modal-header">
+               <h2 class="modal-title">Achtung: Erneute Genehmigung erforderlich</h2>
+               <button class="close-btn" type="button" @click="showReapprovalModal = false" :aria-label="$t('calendar.modal.close') || 'Schließen'">✕</button>
+            </header>
+
+            <div class="modal-body">
+               <p style="margin-bottom: var(--space-4);">
+                 Du hast Änderungen an Raum, Datum oder Uhrzeit vorgenommen. <br><br>
+                 Da dieses Meeting bereits <strong>genehmigt</strong> war, führt die Speicherung dazu, dass der Status wieder auf <strong>"Geplant"</strong> zurückgesetzt wird und das Meeting neu genehmigt werden muss.
+               </p>
+               <p style="font-weight: bold; color: var(--color-danger);">
+                 Möchtest du diese Änderungen trotzdem speichern?
+               </p>
+            </div>
+
+            <div class="modal-actions" style="display: flex; justify-content: flex-end; gap: var(--space-3); padding: var(--space-4); border-top: 1px solid var(--color-border); background: var(--color-bg-secondary); border-radius: 0 0 var(--radius-xl) var(--radius-xl);">
+               <button class="btn btn-secondary" type="button" @click="showReapprovalModal = false">Abbrechen</button>
+               <button class="btn btn-primary" type="button" @click="executeSaveBooking">Trotzdem speichern</button>
             </div>
          </div>
       </div>
@@ -1190,8 +1296,7 @@ onMounted(async () => {
 /* Bookings */
 .booking-item {
   position: absolute;
-  background-color: var(--color-primary);
-  color: white;
+  color: #111827;
   border-radius: 6px;
   padding: 4px 8px;
   font-size: 0.8rem;
@@ -1201,6 +1306,17 @@ onMounted(async () => {
   border: 1px solid rgba(255,255,255,0.2);
   transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
   z-index: 5;
+}
+
+.booking-item.is-planned {
+  background-color: #f59e0b;
+  border: 1px solid rgba(146, 64, 14, 0.25);
+}
+
+.booking-item.is-approved {
+  background-color: #16a34a;
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
 }
 
 .booking-item:hover {
@@ -1238,6 +1354,16 @@ onMounted(async () => {
   z-index: 2000;
   padding: var(--space-4);
   animation: fadeIn 0.2s ease-out;
+}
+
+.error-modal {
+  max-width: 400px;
+  background-color: var(--color-bg-primary);
+  border-radius: var(--radius-xl);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  animation: popIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  display: flex;
+  flex-direction: column;
 }
 
 .modal {
@@ -1293,6 +1419,35 @@ onMounted(async () => {
 .modal-body {
   padding: var(--space-6);
   overflow-y: auto;
+}
+
+.status-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.2rem 0.6rem;
+  border-radius: var(--radius-full);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.status-badge.is-planned {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fcd34d;
+}
+
+.status-badge.is-approved {
+  background: #dcfce7;
+  color: #166534;
+  border: 1px solid #86efac;
 }
 
 .detail-list {

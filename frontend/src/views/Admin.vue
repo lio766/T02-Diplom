@@ -1,15 +1,11 @@
 <script setup>
-import { computed, ref, onMounted, onUnmounted } from 'vue'
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import api from '../lib/api.js'
-import axios from 'axios'
-import {getToken, useKeycloak } from '@josempgon/vue-keycloak';
-const {decodedToken, isPending, isAuthenticated, error, username, keycloak, hasRoles } = useKeycloak();
+import { useKeycloak } from '@josempgon/vue-keycloak'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
-
-const API_BASE = import.meta.env.VITE_API_BASE || '/api'
-
+const { isAuthenticated, hasRoles } = useKeycloak()
 
 const bezeichnung = ref('')
 const standort = ref('')
@@ -19,19 +15,51 @@ const loading = ref(false)
 const msg = ref('')
 const err = ref('')
 
+const assigning = ref(false)
+const assignMsg = ref('')
+const assignErr = ref('')
+
+const rooms = ref([])
+const approvers = ref([])
+const selectedRoomId = ref('')
+const selectedApproverIds = ref([])
+const showRoomDropdown = ref(false)
+
 const isLoggedIn = computed(() => isAuthenticated.value)
-const isAdmin = computed(() => {
- hasRoles(['administrator']) 
+const isAdmin = computed(() => hasRoles(['administrator']))
+
+const currentRoomName = computed(() => {
+  if (!selectedRoomId.value) return t('admin.placeholder.selectRoom')
+  const r = rooms.value.find(r => String(r.id) === selectedRoomId.value)
+  return r ? `${r.name} (${r.Standort})` : t('admin.placeholder.selectRoom')
 })
 
-if(isAuthenticated.value) {
-  console.log('User authenticated:', username.value)
+function selectRoom(id) {
+  selectedRoomId.value = String(id)
+  showRoomDropdown.value = false
 }
 
+function closeRoomDropdown(e) {
+  if (!e.target.closest('.room-dropdown-wrapper')) {
+    showRoomDropdown.value = false
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('click', closeRoomDropdown)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', closeRoomDropdown)
+})
+
+function getErrorMessage(e, fallback) {
+  return e?.response?.data?.error || e?.message || fallback
+}
 
 function validate() {
-  if (!isLoggedIn.value) return t('admin.error.noAdmin') // Technically login required first but re-using or new key
-  if (isAdmin == false) return t('admin.error.noAdmin')
+  if (!isLoggedIn.value) return t('admin.error.noAdmin')
+  if (!isAdmin.value) return t('admin.error.noAdmin')
   if (!bezeichnung.value.trim()) return t('admin.error.required')
   if (!standort.value.trim()) return t('admin.error.locationRequired')
   const k = Number(kapazitaet.value)
@@ -44,29 +72,114 @@ async function submit() {
   err.value = ''
 
   const v = validate()
-  if (v) { err.value = v; return }
+  if (v) {
+    err.value = v
+    return
+  }
 
   loading.value = true
   try {
-    const res = await api.post('/admin/rooms', {
+    const { data } = await api.post('/admin/rooms', {
       bezeichnung: bezeichnung.value,
       standort: standort.value,
       kapazitaet: Number(kapazitaet.value),
     })
-    console.log('API Response:', res)
-    const data = res.data
-    if (res.status === 401) throw new Error(data.error || t('calendar.messages.loginRequired'))
-    if (res.status === 403) throw new Error(data.error || t('admin.error.noAdmin'))
 
     msg.value = `${t('admin.success')} (ID: ${data.id}).`
     bezeichnung.value = ''
     standort.value = ''
     kapazitaet.value = ''
+    await loadRooms()
   } catch (e) {
-    err.value = e.message
+    err.value = getErrorMessage(e, t('admin.error.saveRoom'))
   } finally {
     loading.value = false
   }
+}
+
+async function loadRooms() {
+  try {
+    const { data } = await api.get('/rooms')
+    rooms.value = Array.isArray(data) ? data : []
+
+    if (!rooms.value.length) {
+      selectedRoomId.value = ''
+      selectedApproverIds.value = []
+      return
+    }
+
+    const currentId = Number(selectedRoomId.value)
+    if (!Number.isFinite(currentId) || !rooms.value.some((r) => Number(r.id) === currentId)) {
+      selectedRoomId.value = String(rooms.value[0].id)
+    }
+  } catch (e) {
+    assignErr.value = getErrorMessage(e, t('admin.error.loadRooms'))
+  }
+}
+
+async function loadApprovers() {
+  try {
+    const { data } = await api.get('/admin/approvers')
+    approvers.value = Array.isArray(data) ? data : []
+  } catch (e) {
+    assignErr.value = getErrorMessage(e, t('admin.error.loadApprovers'))
+  }
+}
+
+async function loadRoomAssignments(roomId) {
+  const id = Number(roomId)
+  if (!Number.isFinite(id)) {
+    selectedApproverIds.value = []
+    return
+  }
+
+  assigning.value = true
+  assignErr.value = ''
+  assignMsg.value = ''
+  try {
+    const { data } = await api.get(`/admin/rooms/${id}/approvers`)
+    const ids = Array.isArray(data?.approvers)
+      ? data.approvers.map((u) => Number(u.id)).filter((x) => Number.isFinite(x))
+      : []
+    selectedApproverIds.value = ids
+  } catch (e) {
+    selectedApproverIds.value = []
+    assignErr.value = getErrorMessage(e, t('admin.error.loadAssignments'))
+  } finally {
+    assigning.value = false
+  }
+}
+
+async function saveAssignments() {
+  assignErr.value = ''
+  assignMsg.value = ''
+
+  const roomId = Number(selectedRoomId.value)
+  if (!Number.isFinite(roomId)) {
+    assignErr.value = t('admin.error.selectRoom')
+    return
+  }
+
+  assigning.value = true
+  try {
+    await api.put(`/admin/rooms/${roomId}/approvers`, {
+      approver_ids: selectedApproverIds.value,
+    })
+    assignMsg.value = t('admin.assignSuccess')
+  } catch (e) {
+    assignErr.value = getErrorMessage(e, t('admin.error.saveAssignments'))
+  } finally {
+    assigning.value = false
+  }
+}
+
+watch(selectedRoomId, (value) => {
+  loadRoomAssignments(value)
+})
+
+if (isAdmin.value) {
+  loadRooms()
+  loadApprovers()
 }
 </script>
 
@@ -153,6 +266,85 @@ async function submit() {
             </button>
           </div>
         </form>
+      </div>
+
+      <div class="card admin-form-card">
+        <div class="card-header">
+          <h2>{{ $t('admin.assignApproversTitle') }}</h2>
+          <p>{{ $t('admin.assignApproversDesc') }}</p>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">{{ $t('admin.selectRoom') }}</label>
+          <div class="room-dropdown-wrapper">
+              <button class="room-toggle-btn" type="button" @click="showRoomDropdown = !showRoomDropdown">
+                <span>{{ currentRoomName }}</span>
+                <span class="dropdown-arrow">▼</span>
+              </button>
+              <Transition name="slide-fade">
+                <div v-show="showRoomDropdown" class="user-dropdown room-menu-dropdown">
+                  <button 
+                    type="button"
+                    @click="selectRoom('')" 
+                    class="dropdown-item room-item"
+                    :class="{ 'is-active': selectedRoomId === '' }"
+                  >
+                     {{ $t('admin.placeholder.selectRoom') }}
+                  </button>
+                  <button 
+                    v-for="room in rooms" 
+                    :key="room.id" 
+                    type="button"
+                    @click="selectRoom(room.id)" 
+                    class="dropdown-item room-item"
+                    :class="{ 'is-active': String(room.id) === selectedRoomId }"
+                  >
+                     {{ room.name }} ({{ room.Standort }})
+                  </button>
+                </div>
+              </Transition>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">{{ $t('admin.approverUsers') }}</label>
+
+          <p v-if="!approvers.length" class="hint">{{ $t('admin.noApproversFound') }}</p>
+
+          <div v-else class="approver-grid">
+            <label
+              v-for="approver in approvers"
+              :key="approver.id"
+              class="approver-item"
+            >
+              <input
+                v-model="selectedApproverIds"
+                type="checkbox"
+                :value="Number(approver.id)"
+                :disabled="assigning || !selectedRoomId"
+              />
+              <span>
+                {{ approver.name || approver.email }}
+                <small>{{ approver.email }}</small>
+              </span>
+            </label>
+          </div>
+        </div>
+
+        <div v-if="assignMsg || assignErr" class="message" :class="{ 'is-error': assignErr, 'is-success': assignMsg }">
+          {{ assignMsg || assignErr }}
+        </div>
+
+        <div class="form-actions">
+          <button
+            type="button"
+            class="btn btn-primary"
+            :disabled="assigning || !selectedRoomId"
+            @click="saveAssignments"
+          >
+            {{ assigning ? $t('admin.savingAssignments') : $t('admin.saveAssignments') }}
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -246,6 +438,31 @@ async function submit() {
   display: flex;
   gap: var(--space-3);
   justify-content: flex-end;
+}
+
+.approver-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-3);
+}
+
+.approver-item {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-start;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+}
+
+.approver-item small {
+  display: block;
+  color: var(--color-text-secondary);
+}
+
+.hint {
+  color: var(--color-text-secondary);
+  margin: 0;
 }
 
 @media (max-width: 600px) {

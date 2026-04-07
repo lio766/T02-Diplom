@@ -30,8 +30,42 @@ const DB_CONFIG = {
 
 let pool;
 
+async function ensureBookingRequesterColumn() {
+    const [colRows] = await pool.query(
+        `SELECT COUNT(*) AS cnt
+         FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = ?
+           AND TABLE_NAME = 'Buchungen'
+           AND COLUMN_NAME = 'Benutzer_Id'`,
+        [DB_CONFIG.database]
+    )
+
+    if (Number(colRows[0]?.cnt || 0) === 0) {
+        await pool.query('ALTER TABLE Buchungen ADD COLUMN Benutzer_Id INT NULL')
+    }
+
+    const [fkRows] = await pool.query(
+        `SELECT COUNT(*) AS cnt
+         FROM information_schema.TABLE_CONSTRAINTS
+         WHERE CONSTRAINT_SCHEMA = ?
+           AND TABLE_NAME = 'Buchungen'
+           AND CONSTRAINT_NAME = 'fk_buchungen_benutzer'`,
+        [DB_CONFIG.database]
+    )
+
+    if (Number(fkRows[0]?.cnt || 0) === 0) {
+        await pool.query(
+            `ALTER TABLE Buchungen
+             ADD CONSTRAINT fk_buchungen_benutzer
+             FOREIGN KEY (Benutzer_Id)
+             REFERENCES Benutzer (Benutzer_Id)`
+        )
+    }
+}
+
 async function initDb() {
     pool = mysql.createPool(DB_CONFIG)
+    await ensureBookingRequesterColumn()
 }
 
 async function checkDbConnection() {
@@ -74,7 +108,11 @@ async function findBenutzerByName(fullName) {
 // Helper: check time conflict for a room
 async function hasConflict(raumId, startTs, endTs) {
     const [rows] = await pool.query(
-        'SELECT COUNT(*) AS cnt FROM Buchungen WHERE Raum_Id = ? AND NOT (Endzeit <= ? OR Startzeit >= ?)',
+        `SELECT COUNT(*) AS cnt
+         FROM Buchungen
+         WHERE Raum_Id = ?
+           AND Status = 'Genehmigt'
+           AND NOT (Endzeit <= ? OR Startzeit >= ?)`,
         [raumId, startTs, endTs]
     )
     return rows[0].cnt > 0
@@ -82,7 +120,12 @@ async function hasConflict(raumId, startTs, endTs) {
 
 async function hasConflictExcludingBooking(raumId, bookingId, startTs, endTs) {
     const [rows] = await pool.query(
-        'SELECT COUNT(*) AS cnt FROM Buchungen WHERE Raum_Id = ? AND Buchung_Id <> ? AND NOT (Endzeit <= ? OR Startzeit >= ?)',
+        `SELECT COUNT(*) AS cnt
+         FROM Buchungen
+         WHERE Raum_Id = ?
+           AND Buchung_Id <> ?
+           AND Status = 'Genehmigt'
+           AND NOT (Endzeit <= ? OR Startzeit >= ?)`,
         [raumId, bookingId, startTs, endTs]
     )
     return rows[0].cnt > 0
@@ -143,6 +186,23 @@ function parseParticipantsFromBody(body) {
         .filter(Boolean)
 }
 
+function parseParticipantsRaw(raw) {
+    return String(raw || '')
+        .split('||')
+        .map((x) => x.trim())
+        .filter(Boolean)
+        .map((x) => {
+            const [idStr, email, name] = x.split('::')
+            const id = Number(idStr)
+            return {
+                id: Number.isFinite(id) ? id : null,
+                email: email || '',
+                name: (name || '').trim(),
+            }
+        })
+        .filter((p) => p.id != null)
+}
+
 // GET /bookings -> list bookings with room and optional person name
 // List rooms
 app.get('/api/rooms', authenticate, async (req, res) => {
@@ -195,8 +255,281 @@ async function createRoomHandler(req, res) {
     }
 }
 
+async function listApproversHandler(req, res) {
+    try {
+        const [rows] = await pool.query(
+            `SELECT b.Benutzer_Id AS id, b.Email AS email, b.Vorname AS vorname, b.Nachname AS nachname
+             FROM Benutzer b
+             JOIN Rollen r ON r.Rollen_Id = b.Rollen_Id
+             WHERE b.Rollen_Id = 2 OR LOWER(r.Name) = 'genehmiger'
+             ORDER BY b.Nachname ASC, b.Vorname ASC`
+        )
+
+        return res.json(
+            rows.map((u) => ({
+                id: u.id,
+                email: u.email,
+                vorname: u.vorname,
+                nachname: u.nachname,
+                name: `${u.vorname || ''} ${u.nachname || ''}`.trim(),
+            }))
+        )
+    } catch (err) {
+        console.error('GET /api/admin/approvers error:', err)
+        return res.status(500).json({ error: 'Fehler beim Laden der Genehmiger' })
+    }
+}
+
+async function getRoomApproversHandler(req, res) {
+    try {
+        const roomId = Number(req.params.id)
+        if (!Number.isFinite(roomId)) return res.status(400).json({ error: 'Ungültige Raum-ID' })
+
+        const [roomRows] = await pool.query('SELECT Raum_Id AS id FROM Raum WHERE Raum_Id = ? LIMIT 1', [roomId])
+        if (!roomRows.length) return res.status(404).json({ error: 'Raum nicht gefunden' })
+
+        const [rows] = await pool.query(
+            `SELECT b.Benutzer_Id AS id, b.Email AS email, b.Vorname AS vorname, b.Nachname AS nachname
+             FROM Genehmiger_Raum gr
+             JOIN Benutzer b ON b.Benutzer_Id = gr.Benutzer_Id
+             WHERE gr.Raum_Id = ?
+             ORDER BY b.Nachname ASC, b.Vorname ASC`,
+            [roomId]
+        )
+
+        return res.json({
+            room_id: roomId,
+            approvers: rows.map((u) => ({
+                id: u.id,
+                email: u.email,
+                vorname: u.vorname,
+                nachname: u.nachname,
+                name: `${u.vorname || ''} ${u.nachname || ''}`.trim(),
+            })),
+        })
+    } catch (err) {
+        console.error('GET /api/admin/rooms/:id/approvers error:', err)
+        return res.status(500).json({ error: 'Fehler beim Laden der Raumzuweisungen' })
+    }
+}
+
+async function updateRoomApproversHandler(req, res) {
+    const conn = await pool.getConnection()
+    try {
+        const roomId = Number(req.params.id)
+        if (!Number.isFinite(roomId)) return res.status(400).json({ error: 'Ungültige Raum-ID' })
+
+        const rawIds = Array.isArray(req.body?.approver_ids) ? req.body.approver_ids : []
+        const approverIds = Array.from(
+            new Set(
+                rawIds
+                    .map((x) => Number(x))
+                    .filter((x) => Number.isFinite(x) && x > 0)
+            )
+        )
+
+        const [roomRows] = await conn.query('SELECT Raum_Id AS id FROM Raum WHERE Raum_Id = ? LIMIT 1', [roomId])
+        if (!roomRows.length) return res.status(404).json({ error: 'Raum nicht gefunden' })
+
+        if (approverIds.length) {
+            const placeholders = approverIds.map(() => '?').join(',')
+            const [validApprovers] = await conn.query(
+                `SELECT b.Benutzer_Id AS id
+                 FROM Benutzer b
+                 JOIN Rollen r ON r.Rollen_Id = b.Rollen_Id
+                 WHERE b.Benutzer_Id IN (${placeholders})
+                   AND (b.Rollen_Id = 2 OR LOWER(r.Name) = 'genehmiger')`,
+                approverIds
+            )
+            const validIds = new Set(validApprovers.map((x) => Number(x.id)))
+            const invalidIds = approverIds.filter((x) => !validIds.has(x))
+            if (invalidIds.length) {
+                return res.status(400).json({
+                    error: `Nur Benutzer mit Genehmigerrolle sind erlaubt. Ungültige IDs: ${invalidIds.join(', ')}`,
+                    invalid_ids: invalidIds,
+                })
+            }
+        }
+
+        await conn.beginTransaction()
+        await conn.query('DELETE FROM Genehmiger_Raum WHERE Raum_Id = ?', [roomId])
+
+        for (const approverId of approverIds) {
+            await conn.query(
+                'INSERT INTO Genehmiger_Raum (Raum_Id, Benutzer_Id) VALUES (?, ?)',
+                [roomId, approverId]
+            )
+        }
+
+        await conn.commit()
+        return res.json({ room_id: roomId, approver_ids: approverIds })
+    } catch (err) {
+        try {
+            await conn.rollback()
+        } catch (_) { }
+        console.error('PUT /api/admin/rooms/:id/approvers error:', err)
+        return res.status(500).json({ error: 'Fehler beim Speichern der Raumzuweisungen' })
+    } finally {
+        conn.release()
+    }
+}
+
+async function listPendingApprovalsHandler(req, res) {
+    try {
+        const approverId = await getBenutzerIdForRequestUser(req.user)
+        if (!Number.isFinite(Number(approverId))) {
+            return res.status(404).json({ error: 'Genehmiger-Benutzer nicht gefunden' })
+        }
+
+        const [rows] = await pool.query(
+            `SELECT
+                b.Buchung_Id AS id,
+                b.Raum_Id AS room_id,
+                r.Bezeichnung AS room,
+                DATE_FORMAT(b.Startzeit, '%Y-%m-%d') AS date,
+                DATE_FORMAT(b.Startzeit, '%H:%i') AS start_time,
+                DATE_FORMAT(b.Endzeit, '%H:%i') AS end_time,
+                b.Name AS name,
+                b.Beschreibung AS beschreibung,
+                b.Status AS status,
+                MAX(req_u.Email) AS requester_email,
+                MAX(TRIM(CONCAT(COALESCE(req_u.Vorname,''), ' ', COALESCE(req_u.Nachname,'')))) AS requester_name,
+                GROUP_CONCAT(DISTINCT CONCAT(
+                    u.Benutzer_Id, '::', COALESCE(u.Email,''), '::',
+                    TRIM(CONCAT(COALESCE(u.Vorname,''), ' ', COALESCE(u.Nachname,'')))
+                ) SEPARATOR '||') AS participants_raw
+             FROM Buchungen b
+             JOIN Raum r ON r.Raum_Id = b.Raum_Id
+             JOIN Genehmiger_Raum gr ON gr.Raum_Id = b.Raum_Id
+             LEFT JOIN Benutzer req_u ON req_u.Benutzer_Id = b.Benutzer_Id
+             LEFT JOIN Buchung_Benutzer bb ON bb.Buchung_Id = b.Buchung_Id
+             LEFT JOIN Benutzer u ON u.Benutzer_Id = bb.Benutzer_Id
+             WHERE gr.Benutzer_Id = ?
+               AND b.Status = 'Geplant'
+             GROUP BY b.Buchung_Id
+             ORDER BY b.Startzeit ASC, b.Erstellzeit ASC`,
+            [Number(approverId)]
+        )
+
+        const data = rows.map((r) => {
+            const participants = parseParticipantsRaw(r.participants_raw)
+            const requesterName = String(r.requester_name || '').trim()
+            const requesterEmail = String(r.requester_email || '').trim()
+            const fallbackRequester = participants[0] || null
+            return {
+                id: r.id,
+                room_id: r.room_id,
+                room: r.room,
+                date: r.date,
+                start_time: r.start_time,
+                end_time: r.end_time,
+                name: r.name,
+                beschreibung: r.beschreibung,
+                status: r.status,
+                requester_name: requesterName || fallbackRequester?.name || '',
+                requester_email: requesterEmail || fallbackRequester?.email || '',
+                requester_display: requesterName || requesterEmail || fallbackRequester?.name || fallbackRequester?.email || '',
+                participants,
+            }
+        })
+
+        return res.json(data)
+    } catch (err) {
+        console.error('GET /api/approvals error:', err)
+        return res.status(500).json({ error: 'Fehler beim Laden der Genehmigungen' })
+    }
+}
+
+async function decideApprovalHandler(req, res) {
+    const conn = await pool.getConnection()
+    try {
+        const bookingId = Number(req.params.id)
+        const decision = String(req.body?.decision || '').trim().toLowerCase()
+
+        if (!Number.isFinite(bookingId)) return res.status(400).json({ error: 'Ungültige Buchungs-ID' })
+        if (!['approve', 'reject'].includes(decision)) {
+            return res.status(400).json({ error: 'Ungültige Entscheidung. Erlaubt: approve oder reject' })
+        }
+
+        const approverId = await getBenutzerIdForRequestUser(req.user)
+        if (!Number.isFinite(Number(approverId))) {
+            return res.status(404).json({ error: 'Genehmiger-Benutzer nicht gefunden' })
+        }
+
+        await conn.beginTransaction()
+
+        const [bookingRows] = await conn.query(
+            `SELECT Buchung_Id AS id, Raum_Id AS room_id, Startzeit AS start_ts, Endzeit AS end_ts, Status AS status
+             FROM Buchungen
+             WHERE Buchung_Id = ?
+             LIMIT 1`,
+            [bookingId]
+        )
+        if (!bookingRows.length) {
+            await conn.rollback()
+            return res.status(404).json({ error: 'Buchungsanfrage nicht gefunden' })
+        }
+
+        const booking = bookingRows[0]
+        if (String(booking.status || '') !== 'Geplant') {
+            await conn.rollback()
+            return res.status(409).json({ error: 'Buchung wurde bereits entschieden' })
+        }
+
+        const [assignmentRows] = await conn.query(
+            `SELECT 1 AS ok
+             FROM Genehmiger_Raum
+             WHERE Raum_Id = ? AND Benutzer_Id = ?
+             LIMIT 1`,
+            [booking.room_id, Number(approverId)]
+        )
+        if (!assignmentRows.length) {
+            await conn.rollback()
+            return res.status(403).json({ error: 'Keine Berechtigung für diesen Raum' })
+        }
+
+        if (decision === 'approve') {
+            const [conflictRows] = await conn.query(
+                `SELECT COUNT(*) AS cnt
+                 FROM Buchungen
+                 WHERE Raum_Id = ?
+                   AND Buchung_Id <> ?
+                   AND Status = 'Genehmigt'
+                   AND NOT (Endzeit <= ? OR Startzeit >= ?)`,
+                [booking.room_id, bookingId, booking.start_ts, booking.end_ts]
+            )
+
+            if (Number(conflictRows[0]?.cnt || 0) > 0) {
+                await conn.rollback()
+                return res.status(409).json({ error: 'Zeitfenster wurde bereits durch eine andere Anfrage genehmigt' })
+            }
+
+            await conn.query('UPDATE Buchungen SET Status = ? WHERE Buchung_Id = ?', ['Genehmigt', bookingId])
+            await conn.commit()
+            return res.json({ id: bookingId, status: 'Genehmigt' })
+        }
+
+        await conn.query('DELETE FROM Buchungen WHERE Buchung_Id = ?', [bookingId])
+        await conn.commit()
+        return res.json({ id: bookingId, status: 'Abgelehnt' })
+    } catch (err) {
+        try {
+            await conn.rollback()
+        } catch (_) { }
+        console.error('PUT /api/approvals/:id error:', err)
+        return res.status(500).json({ error: 'Fehler beim Entscheiden der Anfrage' })
+    } finally {
+        conn.release()
+    }
+}
+
 // Admin: create new room, auth + role required
 app.post('/api/admin/rooms', authenticate, requireRole("administrator"), createRoomHandler)
+app.get('/api/admin/approvers', authenticate, requireRole("administrator"), listApproversHandler)
+app.get('/api/admin/rooms/:id/approvers', authenticate, requireRole("administrator"), getRoomApproversHandler)
+app.put('/api/admin/rooms/:id/approvers', authenticate, requireRole("administrator"), updateRoomApproversHandler)
+app.get('/api/approvals', authenticate, requireRole("genehmiger"), listPendingApprovalsHandler)
+app.put('/api/approvals/:id', authenticate, requireRole("genehmiger"), decideApprovalHandler)
 
 async function updateBookingHandler(req, res) {
     try {
@@ -218,15 +551,37 @@ async function updateBookingHandler(req, res) {
         if (endTs <= startTs) return res.status(400).json({ error: 'Endzeit muss nach der Startzeit liegen.' })
 
         // booking exists?
-        const [exists] = await pool.query('SELECT Buchung_Id AS id FROM Buchungen WHERE Buchung_Id = ? LIMIT 1', [bookingId])
-        if (!exists.length) return res.status(404).json({ error: 'Buchung nicht gefunden' })
+        const [existsRows] = await pool.query(
+            "SELECT Benutzer_Id, Status, Raum_Id, DATE_FORMAT(Startzeit, '%Y-%m-%d %H:%i:00') AS start_db, DATE_FORMAT(Endzeit, '%Y-%m-%d %H:%i:00') AS end_db FROM Buchungen WHERE Buchung_Id = ? LIMIT 1", 
+            [bookingId]
+        )
+        if (!existsRows.length) return res.status(404).json({ error: 'Buchung nicht gefunden' })
+        const existing = existsRows[0]
+
+        const authUserId = await getBenutzerIdForRequestUser(req.user)
+        if (existing.Benutzer_Id !== authUserId) {
+            return res.status(403).json({ error: 'Nur der Ersteller darf diese Buchung bearbeiten.' })
+        }
+
+        let newStatus = existing.Status
+        if (existing.Status === 'Genehmigt') {
+            if (existing.Raum_Id !== raumId || existing.start_db !== startTs || existing.end_db !== endTs) {
+                newStatus = 'Geplant'
+            }
+        }
 
         // room exists?
         const [roomRows] = await pool.query('SELECT Raum_Id AS id FROM Raum WHERE Raum_Id = ? LIMIT 1', [raumId])
         if (!roomRows.length) return res.status(404).json({ error: 'Raum nicht gefunden' })
 
+        // Check if room has an approver
+        const [approverRows] = await pool.query('SELECT Benutzer_Id FROM Genehmiger_Raum WHERE Raum_Id = ? LIMIT 1', [raumId])
+        if (!approverRows.length) {
+            return res.status(400).json({ error: 'Dieser Raum hat keinen zugewiesenen Genehmiger und kann daher nicht neu gebucht werden.' })
+        }
+
         if (await hasConflictExcludingBooking(raumId, bookingId, startTs, endTs)) {
-            return res.status(409).json({ error: 'Zeitfenster belegt' })
+            return res.status(409).json({ error: 'Zeitfenster bereits genehmigt' })
         }
 
         const conn = await pool.getConnection()
@@ -235,8 +590,8 @@ async function updateBookingHandler(req, res) {
             const nameFinal = String(name || '').trim()
             const beschreibungFinal = String(beschreibung || '').trim() || null
             await conn.query(
-                'UPDATE Buchungen SET Raum_Id = ?, Startzeit = ?, Endzeit = ?, Name = ?, Beschreibung = ? WHERE Buchung_Id = ?',
-                [raumId, startTs, endTs, nameFinal, beschreibungFinal, bookingId]
+                'UPDATE Buchungen SET Raum_Id = ?, Startzeit = ?, Endzeit = ?, Name = ?, Beschreibung = ?, Status = ? WHERE Buchung_Id = ?',
+                [raumId, startTs, endTs, nameFinal, beschreibungFinal, newStatus, bookingId]
             )
 
             // participants
@@ -247,7 +602,9 @@ async function updateBookingHandler(req, res) {
                 return res.status(400).json({ error: `Unbekannte Teilnehmer: ${unknown.join(', ')}`, unknown })
             }
 
-            const userIds = Array.from(new Set(users.map((u) => u.id).filter((x) => Number.isFinite(Number(x)))))
+            const userIds = Array.from(
+                new Set([authUserId, ...users.map((u) => u.id)].filter((x) => Number.isFinite(Number(x))))
+            )
             for (const uid of userIds) {
                 try {
                     await conn.query('INSERT INTO Buchung_Benutzer (Buchung_Id, Benutzer_Id) VALUES (?, ?)', [bookingId, uid])
@@ -255,7 +612,7 @@ async function updateBookingHandler(req, res) {
             }
 
             await conn.commit()
-            return res.json({ id: bookingId })
+            return res.json({ id: bookingId, status: newStatus })
         } finally {
             conn.release()
         }
@@ -269,6 +626,32 @@ async function deleteBookingHandler(req, res) {
     try {
         const bookingId = Number(req.params.id)
         if (!Number.isFinite(bookingId)) return res.status(400).json({ error: 'Ungültige Buchungs-ID' })
+        
+        const [existsRows] = await pool.query('SELECT Benutzer_Id, Raum_Id FROM Buchungen WHERE Buchung_Id = ? LIMIT 1', [bookingId])
+        if (!existsRows.length) return res.status(404).json({ error: 'Buchung nicht gefunden' })
+        
+        const existing = existsRows[0]
+        const authUserId = await getBenutzerIdForRequestUser(req.user)
+        
+        let roles = req.user?.realm_access?.roles || []
+        const isGenehmiger = roles.includes("genehmiger")
+        
+        if (existing.Benutzer_Id !== authUserId) {
+            if (!isGenehmiger) {
+                return res.status(403).json({ error: 'Nur der Ersteller darf diese Buchung löschen.' })
+            }
+            
+            // Verifizieren dass der Genehmiger für diesen Raum berechtigt ist
+            const [genehmigerRaumRows] = await pool.query(
+                'SELECT 1 FROM Genehmiger_Raum WHERE Raum_Id = ? AND Benutzer_Id = ? LIMIT 1', 
+                [existing.Raum_Id, authUserId]
+            )
+            
+            if (!genehmigerRaumRows.length) {
+                return res.status(403).json({ error: 'Sie sind nicht als Genehmiger für diesen Raum eingeteilt und dürfen die Buchung daher nicht löschen.' })
+            }
+        }
+
         const [result] = await pool.query('DELETE FROM Buchungen WHERE Buchung_Id = ?', [bookingId])
         if (!result.affectedRows) return res.status(404).json({ error: 'Buchung nicht gefunden' })
         return res.status(204).send()
@@ -278,9 +661,9 @@ async function deleteBookingHandler(req, res) {
     }
 }
 
-// Admin: update/delete bookings
-app.put('/api/bookings/:id', authenticate, requireRole("administrator"), updateBookingHandler)
-app.delete('/api/bookings/:id', authenticate, requireRole("administrator"), deleteBookingHandler)
+// User/Admin: update/delete bookings
+app.put('/api/bookings/:id', authenticate, updateBookingHandler)
+app.delete('/api/bookings/:id', authenticate, deleteBookingHandler)
 
 async function searchUsersHandler(req, res) {
     try {
@@ -434,6 +817,8 @@ app.get('/api/bookings', authenticate, async (req, res) => {
 				 b.Buchung_Id AS id,
 				 b.Raum_Id AS room_id,
 				 r.Bezeichnung AS room,
+                 b.Status AS status,
+				 (SELECT Keycloak_Id FROM Benutzer WHERE Benutzer_Id = b.Benutzer_Id) AS requester_sub,
 				 DATE_FORMAT(b.Startzeit, '%Y-%m-%d') AS date,
 				 DATE_FORMAT(b.Startzeit, '%H:%i') AS start_time,
 				 DATE_FORMAT(b.Endzeit, '%H:%i') AS end_time,
@@ -453,24 +838,13 @@ app.get('/api/bookings', authenticate, async (req, res) => {
             params
         )
         const data = rows.map((r) => {
-            const parts = String(r.participants_raw || '')
-                .split('||')
-                .map((x) => x.trim())
-                .filter(Boolean)
-                .map((x) => {
-                    const [idStr, email, name] = x.split('::')
-                    const id = Number(idStr)
-                    return {
-                        id: Number.isFinite(id) ? id : null,
-                        email: email || '',
-                        name: (name || '').trim(),
-                    }
-                })
-                .filter((p) => p.id != null)
+            const parts = parseParticipantsRaw(r.participants_raw)
             return {
                 id: r.id,
                 room_id: r.room_id,
                 room: r.room,
+                status: r.status,
+                requester_sub: r.requester_sub,
                 date: r.date,
                 start_time: r.start_time,
                 end_time: r.end_time,
@@ -513,13 +887,22 @@ app.post('/api/bookings', authenticate, async (req, res) => {
             return res.status(404).json({ error: `Raum nicht gefunden` })
         }
 
+        const [assignedApprovers] = await pool.query(
+            'SELECT Benutzer_Id AS id FROM Genehmiger_Raum WHERE Raum_Id = ?',
+            [raumId]
+        )
+        if (!assignedApprovers.length) {
+            return res.status(400).json({ error: 'Für diesen Raum sind keine Genehmiger zugewiesen' })
+        }
+
         // Conflict check
         if (await hasConflict(raumId, startTs, endTs)) {
-            return res.status(409).json({ error: 'Zeitfenster belegt' })
+            return res.status(409).json({ error: 'Zeitfenster bereits genehmigt' })
         }
 
         // Default values
         const status = 'Geplant'
+        const requesterId = Number.isFinite(Number(authUserId)) ? Number(authUserId) : null
         
         const nameFinal = String(name || '').trim()
         const beschreibungFinal = String(beschreibung || '').trim() || null
@@ -528,8 +911,8 @@ app.post('/api/bookings', authenticate, async (req, res) => {
         try {
             await conn.beginTransaction()
             const [ins] = await conn.query(
-                'INSERT INTO Buchungen (Raum_Id, Startzeit, Endzeit, Status, Name, Beschreibung) VALUES (?, ?, ?, ?, ?, ?)',
-                [raumId, startTs, endTs, status, nameFinal, beschreibungFinal]
+                'INSERT INTO Buchungen (Raum_Id, Benutzer_Id, Startzeit, Endzeit, Status, Name, Beschreibung) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                [raumId, requesterId, startTs, endTs, status, nameFinal, beschreibungFinal]
             )
             const bookingId = ins.insertId
 
@@ -574,7 +957,7 @@ app.post('/api/bookings', authenticate, async (req, res) => {
                 }
             }
 
-            return res.status(201).json({ id: bookingId })
+            return res.status(201).json({ id: bookingId, status, requested_approver_count: assignedApprovers.length })
         } finally {
             conn.release()
         }

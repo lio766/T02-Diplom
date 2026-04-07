@@ -44,11 +44,12 @@ CREATE TABLE IF NOT EXISTS Raum (
 ) ENGINE=InnoDB;
 
 -- =========================
--- Buchungen (ohne Benutzer_Id!)
+-- Buchungen
 -- =========================
 CREATE TABLE IF NOT EXISTS Buchungen (
   Buchung_Id INT AUTO_INCREMENT PRIMARY KEY,
   Raum_Id INT NOT NULL,
+  Benutzer_Id INT,
   Startzeit DATETIME NOT NULL,
   Endzeit DATETIME NOT NULL,
   Status VARCHAR(50) NOT NULL,
@@ -59,6 +60,9 @@ CREATE TABLE IF NOT EXISTS Buchungen (
   CONSTRAINT fk_buchungen_raum
     FOREIGN KEY (Raum_Id)
     REFERENCES Raum (Raum_Id),
+  CONSTRAINT fk_buchungen_benutzer
+    FOREIGN KEY (Benutzer_Id)
+    REFERENCES Benutzer (Benutzer_Id),
   CONSTRAINT chk_zeit
     CHECK (Startzeit < Endzeit)
 ) ENGINE=InnoDB;

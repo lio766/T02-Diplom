@@ -7,6 +7,7 @@ const messages = {
       dashboard: 'Dashboard',
       booking: 'Buchen',
       calendar: 'Kalender',
+      approvals: 'Genehmigungen',
       admin: 'Admin',
       wiki: 'Wiki',
       login: 'Anmelden',
@@ -45,6 +46,7 @@ const messages = {
        modal: {
          title: 'Buchungsdetails',
          room: 'Raum',
+         status: 'Status',
          date: 'Datum',
          start: 'Start',
          end: 'Ende',
@@ -63,9 +65,14 @@ const messages = {
          date: 'Datum',
          time: 'Zeit',
          room: 'Raum',
+         status: 'Status',
          title: 'Titel / Teilnehmer',
          empty: 'Keine Buchungen gefunden.',
          unknownRoom: 'Unbekannt'
+       },
+       status: {
+         pending: 'Geplant',
+         approved: 'Genehmigt'
        }
     },
     booking: {
@@ -88,7 +95,7 @@ const messages = {
       alreadyAdded: 'Bereits hinzugefügt',
       noResults: 'Keine Ergebnisse gefunden',
       removeParticipant: 'Teilnehmer entfernen',
-      occupied: 'Zeitfenster belegt',
+      occupied: 'Zeitfenster bereits genehmigt',
       saveError: 'Fehler beim Speichern',
       success: 'Buchung gespeichert.',
       required: '*'
@@ -153,8 +160,8 @@ const messages = {
       loadUsersError: 'Fehler beim Laden der Benutzer',
       fillAllFields: 'Bitte alle erforderlichen Felder ausfüllen.',
       endTimeError: 'Endzeit muss nach der Startzeit liegen.',
-      saved: 'Buchung gespeichert.',
-      occupied: 'Zeitfenster belegt'
+      saved: 'Anfrage gesendet. Wartet auf Genehmigung.',
+      occupied: 'Zeitfenster bereits genehmigt'
     },
     admin: {
       title: 'Admin Dashboard',
@@ -164,6 +171,14 @@ const messages = {
       toLogin: 'Zum Login',
       createRoom: 'Neuen Raum anlegen',
       createRoomDesc: 'Erfasse die Details für einen neuen Raum.',
+      assignApproversTitle: 'Genehmiger zu Räumen zuweisen',
+      assignApproversDesc: 'Lege fest, welche Genehmiger Buchungen pro Raum prüfen dürfen.',
+      selectRoom: 'Raum auswählen',
+      approverUsers: 'Genehmiger',
+      saveAssignments: 'Zuweisungen speichern',
+      savingAssignments: 'Speichern...',
+      assignSuccess: 'Genehmiger-Zuweisungen gespeichert.',
+      noApproversFound: 'Es wurden keine Benutzer mit Genehmigerrolle gefunden.',
       roomName: 'Bezeichnung',
       location: 'Standort',
       capacity: 'Kapazität (Personen)',
@@ -175,14 +190,61 @@ const messages = {
       placeholder: {
          roomName: 'z.B. Meetingraum A',
          location: 'z.B. 1. Stock',
-         capacity: 'z.B. 8'
+         capacity: 'z.B. 8',
+         selectRoom: '-- Raum wählen --'
       },
       success: 'Raum erfolgreich angelegt',
       error: {
         required: 'Bezeichnung ist erforderlich.',
         locationRequired: 'Standort ist erforderlich.',
         capacity: 'Kapazität muss > 0 sein.',
-        noAdmin: 'Keine Admin-Berechtigung.'
+        noAdmin: 'Keine Admin-Berechtigung.',
+        saveRoom: 'Fehler beim Anlegen des Raums.',
+        loadRooms: 'Fehler beim Laden der Räume.',
+        loadApprovers: 'Fehler beim Laden der Genehmiger.',
+        loadAssignments: 'Fehler beim Laden der Raumzuweisungen.',
+        saveAssignments: 'Fehler beim Speichern der Raumzuweisungen.',
+        selectRoom: 'Bitte zuerst einen Raum auswählen.'
+      }
+    },
+    approvals: {
+      title: 'Genehmigungen',
+      subtitle: 'Offene Buchungsanfragen für Ihre zugewiesenen Räume.',
+      noPermission: 'Keine Berechtigung',
+      approverOnly: 'Dieser Bereich ist nur für Benutzer mit Genehmigerrolle verfügbar.',
+      loading: 'Lädt...',
+      refresh: 'Neu laden',
+      empty: 'Aktuell gibt es keine offenen Genehmigungsanfragen.',
+      untitled: 'Ohne Titel',
+      room: 'Raum',
+      bookingName: 'Buchung',
+      requester: 'Angefragt von',
+      date: 'Datum',
+      actions: 'Aktionen',
+      time: 'Zeit',
+      statusLabel: 'Status',
+      description: 'Beschreibung',
+      close: 'Schließen',
+      participants: 'Teilnehmer',
+      noParticipants: 'Keine Teilnehmer vorhanden.',
+      approve: 'Genehmigen',
+      reject: 'Ablehnen',
+      filters: {
+        room: 'Raum filtern',
+        date: 'Datum filtern',
+        allRooms: 'Alle Räume',
+        clear: 'Filter zurücksetzen'
+      },
+      status: {
+        pending: 'Geplant'
+      },
+      success: {
+        approved: 'Anfrage wurde genehmigt.',
+        rejected: 'Anfrage wurde abgelehnt.'
+      },
+      error: {
+        load: 'Fehler beim Laden der Genehmigungen.',
+        decide: 'Fehler beim Verarbeiten der Entscheidung.'
       }
     },
     home: {
@@ -267,6 +329,7 @@ const messages = {
       dashboard: 'Dashboard',
       booking: 'Booking',
       calendar: 'Calendar',
+      approvals: 'Approvals',
       admin: 'Admin',
       wiki: 'Wiki',
       login: 'Login',
@@ -305,6 +368,7 @@ const messages = {
        modal: {
          title: 'Booking Details',
          room: 'Room',
+         status: 'Status',
          date: 'Date',
          start: 'Start',
          end: 'End',
@@ -323,9 +387,14 @@ const messages = {
          date: 'Date',
          time: 'Time',
          room: 'Room',
+         status: 'Status',
          title: 'Title / Participants',
          empty: 'No bookings found.',
          unknownRoom: 'Unknown'
+       },
+       status: {
+         pending: 'Planned',
+         approved: 'Approved'
        }
     },
     bookingForm: {
@@ -348,8 +417,8 @@ const messages = {
       loadUsersError: 'Error loading users',
       fillAllFields: 'Please fill all required fields.',
       endTimeError: 'End time must be after start time.',
-      saved: 'Booking saved.',
-      occupied: 'Time slot occupied'
+      saved: 'Request sent. Waiting for approval.',
+      occupied: 'Time slot already approved'
     },
     booking: {
       title: 'Room Booking',
@@ -371,7 +440,7 @@ const messages = {
       alreadyAdded: 'Already added',
       noResults: 'No results found',
       removeParticipant: 'Remove Participant',
-      occupied: 'Time slot occupied',
+      occupied: 'Time slot already approved',
       saveError: 'Error saving',
       success: 'Booking saved.',
       required: '*'
@@ -424,6 +493,14 @@ const messages = {
       toLogin: 'To Login',
       createRoom: 'Create New Room',
       createRoomDesc: 'Enter details for a new room.',
+      assignApproversTitle: 'Assign Approvers to Rooms',
+      assignApproversDesc: 'Define which approvers can review bookings for each room.',
+      selectRoom: 'Select Room',
+      approverUsers: 'Approvers',
+      saveAssignments: 'Save Assignments',
+      savingAssignments: 'Saving...',
+      assignSuccess: 'Approver assignments saved.',
+      noApproversFound: 'No users with approver role found.',
       roomName: 'Designation',
       location: 'Location',
       capacity: 'Capacity (People)',
@@ -435,14 +512,61 @@ const messages = {
       placeholder: {
          roomName: 'e.g. Meeting Room A',
          location: 'e.g. 1st Floor',
-         capacity: 'e.g. 8'
+         capacity: 'e.g. 8',
+         selectRoom: '-- Select Room --'
       },
       success: 'Room created successfully',
       error: {
         required: 'Designation is required.',
         locationRequired: 'Location is required.',
         capacity: 'Capacity must be > 0.',
-        noAdmin: 'No Admin permissions.'
+        noAdmin: 'No Admin permissions.',
+        saveRoom: 'Error creating room.',
+        loadRooms: 'Error loading rooms.',
+        loadApprovers: 'Error loading approvers.',
+        loadAssignments: 'Error loading room assignments.',
+        saveAssignments: 'Error saving room assignments.',
+        selectRoom: 'Please select a room first.'
+      }
+    },
+    approvals: {
+      title: 'Approvals',
+      subtitle: 'Open booking requests for your assigned rooms.',
+      noPermission: 'No Permission',
+      approverOnly: 'This area is only available for users with approver role.',
+      loading: 'Loading...',
+      refresh: 'Refresh',
+      empty: 'There are currently no open approval requests.',
+      untitled: 'Untitled',
+      room: 'Room',
+      bookingName: 'Booking',
+      requester: 'Requested by',
+      date: 'Date',
+      actions: 'Actions',
+      time: 'Time',
+      statusLabel: 'Status',
+      description: 'Description',
+      close: 'Close',
+      participants: 'Participants',
+      noParticipants: 'No participants provided.',
+      approve: 'Approve',
+      reject: 'Reject',
+      filters: {
+        room: 'Filter by room',
+        date: 'Filter by date',
+        allRooms: 'All rooms',
+        clear: 'Clear filters'
+      },
+      status: {
+        pending: 'Planned'
+      },
+      success: {
+        approved: 'Request approved.',
+        rejected: 'Request rejected.'
+      },
+      error: {
+        load: 'Error loading approvals.',
+        decide: 'Error processing decision.'
       }
     },
     home: {

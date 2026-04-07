@@ -11,9 +11,13 @@ const props = defineProps({
 
 const emit = defineEmits(['booking-created', 'close'])
 
+const getTodayIso = () => {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
 
 const roomId = ref('')
-const date = ref('')
+const date = ref(getTodayIso())
 const start = ref('08:00')
 const end = ref('09:00')
 const meetingName = ref('')
@@ -24,6 +28,34 @@ const participantLoading = ref(false)
 const participantError = ref('')
 const selectedParticipants = ref([])
 const showParticipantDropdown = ref(false)
+
+const showRoomDropdown = ref(false)
+
+const currentRoomName = computed(() => {
+  const r = props.rooms.find(r => String(r.id) === String(roomId.value))
+  return r ? r.name : t('bookingForm.selectRoom')
+})
+
+function selectRoom(id) {
+  roomId.value = String(id)
+  showRoomDropdown.value = false
+}
+
+function closeRoomDropdown(e) {
+  if (!e.target.closest('.room-dropdown-wrapper')) {
+    showRoomDropdown.value = false
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('click', closeRoomDropdown)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', closeRoomDropdown)
+  if (searchTimer) clearTimeout(searchTimer)
+  if (currentAbort) currentAbort.abort()
+})
 
 const isLoggedIn = computed(() => Boolean(isAuthenticated.value))
 
@@ -99,11 +131,6 @@ watch(participantQuery, (q) => {
   }, 250)
 })
 
-onUnmounted(() => {
-  if (searchTimer) clearTimeout(searchTimer)
-  if (currentAbort) currentAbort.abort()
-})
-
 watch(() => props.rooms, (list) => {
   if (list && list.length && !roomId.value) {
     roomId.value = String(list[0].id)
@@ -128,7 +155,7 @@ async function submit() {
     .filter(Boolean)
 
   try {
-    const res = await api.post(`/bookings`, {
+    await api.post(`/bookings`, {
         room_id: Number(roomId.value),
         date: date.value,
         start_time: start.value,
@@ -137,14 +164,7 @@ async function submit() {
         beschreibung: beschreibung.value,
         participant_emails: participants,
     })
-    if (res.status === 401) {
-      const data = await res.data.catch(() => ({}))
-      throw new Error(data.error || t('bookingForm.loginFirst'))
-    }
-    if (res.status === 409) {
-      const data = await res.data.catch(() => ({}))
-      throw new Error(data.error || t('bookingForm.occupied'))
-    }
+
     success.value = t('bookingForm.saved')
     // Reset minimal fields
     selectedParticipants.value = []
@@ -154,7 +174,16 @@ async function submit() {
     
     emit('booking-created')
   } catch (e) {
-    error.value = e.message
+        const status = e?.response?.status
+        const apiError = e?.response?.data?.error
+
+        if (status === 401) {
+          error.value = apiError || t('bookingForm.loginFirst')
+        } else if (status === 409) {
+          error.value = apiError || t('bookingForm.occupied')
+        } else {
+          error.value = apiError || e?.message || t('common.error')
+        }
   }
 }
 </script>
@@ -170,20 +199,29 @@ async function submit() {
       <div v-if="success" class="message is-success">
         {{ success }}
       </div>
-      <div v-if="error" class="message is-error">
-        {{ error }}
-      </div>
 
-      <form v-else @submit.prevent="submit" class="booking-form">
+      <form v-if="!success" @submit.prevent="submit" class="booking-form">
         <div class="form-group">
-          <label for="room-select" class="form-label">{{ $t('bookingForm.selectRoom') }}</label>
-          <div class="select-wrapper">
-             <select id="room-select" v-model="roomId" class="form-input">
-                <option v-for="r in rooms" :key="r.id" :value="String(r.id)">
-                   {{ r.name}}
-                </option>
-             </select>
-             <span class="select-arrow">▼</span>
+          <label class="form-label">{{ $t('bookingForm.selectRoom') }}</label>
+          <div class="room-dropdown-wrapper">
+              <button class="room-toggle-btn" type="button" @click="showRoomDropdown = !showRoomDropdown">
+                <span>{{ currentRoomName }}</span>
+                <span class="dropdown-arrow">▼</span>
+              </button>
+              <Transition name="slide-fade">
+                <div v-show="showRoomDropdown" class="user-dropdown room-menu-dropdown">
+                  <button 
+                    v-for="r in rooms" 
+                    :key="r.id" 
+                    type="button"
+                    @click="selectRoom(r.id)" 
+                    class="dropdown-item room-item"
+                    :class="{ 'is-active': String(r.id) === roomId }"
+                  >
+                     {{ r.name }}
+                  </button>
+                </div>
+              </Transition>
           </div>
         </div>
 
@@ -265,9 +303,104 @@ async function submit() {
       </form>
     </div>
   </div>
+
+  <!-- Fehler-Modal -->
+  <Teleport to="body">
+    <div v-if="error" class="modal-backdrop" @click.self="error = ''">
+      <div class="modal error-modal" role="dialog" aria-modal="true">
+        <header class="modal-header">
+          <h2 class="modal-title">{{ $t('common.error') || 'Fehler' }}</h2>
+          <button class="close-btn" type="button" @click="error = ''" :aria-label="$t('calendar.modal.close') || 'Schließen'">✕</button>
+        </header>
+
+        <div class="modal-body">
+          <div class="message is-error" style="text-align: center; font-weight: 500; font-size: 1.1rem; border: none; background: transparent; color: var(--color-danger);">
+            {{ error }}
+          </div>
+        </div>
+
+        <div class="modal-actions" style="display: flex; justify-content: flex-end; padding: var(--space-4); border-top: 1px solid var(--color-border); background: var(--color-bg-secondary); border-radius: 0 0 var(--radius-xl) var(--radius-xl);">
+          <button class="btn btn-secondary" type="button" @click="error = ''">OK</button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
 </template>
 
 <style scoped>
+.error-modal {
+  max-width: 400px;
+  background-color: var(--color-bg-primary);
+  border-radius: var(--radius-xl);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  animation: popIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-header {
+  padding: var(--space-6);
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modal-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+.modal-body {
+  padding: var(--space-6);
+}
+
+.modal-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0,0,0,0.4);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 3000;
+  padding: var(--space-4);
+  animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes popIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.close-btn {
+  background: var(--color-bg-secondary);
+  border: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  font-size: 1rem;
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+.close-btn:hover {
+  background-color: var(--color-danger-bg);
+  color: var(--color-danger);
+}
+
 .booking-form-panel {
   display: flex;
   flex-direction: column;
