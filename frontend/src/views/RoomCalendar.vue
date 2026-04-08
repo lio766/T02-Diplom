@@ -154,6 +154,29 @@ const canDeleteCurrentBooking = computed(() => {
   return (selectedBooking.value && selectedBooking.value.requester_sub === userId.value) || isGenehmiger.value
 })
 
+const decidingId = ref(null)
+async function decideApproval(decision) {
+console.log('Entscheidung:', decision, 'für Buchung ID:', selectedBooking.value?.id)
+  const id = Number(selectedBooking.value.id)
+  if (!Number.isFinite(id)) return
+
+  decidingId.value = id
+  //message.value = ''
+  //error.value = ''
+
+  try {
+  console.log("Sende Entscheidung an API...", { id, decision })
+    await api.put(`/approvals/${id}`, { decision })
+    message.value = decision === 'approve' ? t('approvals.success.approved') : t('approvals.success.rejected')
+  } catch (e) {
+    detailErr.value = t('approvals.error.decide')
+  } finally {
+    closeDetails()
+    loadBookings()
+    decidingId.value = null
+  }
+}
+
 const editRoomId = ref('')
 const editDate = ref('')
 const editStart = ref('')
@@ -446,7 +469,6 @@ async function loadRooms() {
   errorCalender.value = ''
   try {
     const res = await api.get(`/rooms`)
-    console.log('Räume geladen:', res.data)
     if (!res.data) throw new Error(t('calendar.messages.loadRoomsError'))
     rooms.value = res.data
     if (!roomId.value && rooms.value.length) roomId.value = String(rooms.value[0].id)
@@ -786,8 +808,27 @@ onMounted(async () => {
                      </div>
                   </div>
                   
-                  <div class="modal-actions" v-if="canDeleteCurrentBooking && !canEditCurrentBooking">
-                     <button class="btn btn-text text-danger" type="button" :disabled="deleting" @click="deleteBooking">
+                  <div class="modal-actions" v-if="canDeleteCurrentBooking && !canEditCurrentBooking && !isApprovedStatus(selectedBooking.status)">
+                  <button
+                    class="icon-btn reject"
+                    type="button"
+                    @click="decideApproval('reject')"
+                    :title="$t('approvals.reject')"
+                  >
+                    X
+                  </button>
+                  <button
+                    class="icon-btn approve"
+                    type="button"
+                    @click="decideApproval('approve')"
+                    :title="$t('approvals.approve')"
+                  >
+                    ✓
+                  </button>
+                  </div>
+
+                <div v-else-if="canDeleteCurrentBooking && isApprovedStatus(selectedBooking.status)" class="pending-approval">
+                     <button class="btn btn-text text-danger" type="button" :disabled="saving || deleting" @click="deleteBooking">
                         {{ deleting ? $t('calendar.modal.deleting') : $t('calendar.modal.delete') }}
                      </button>
                   </div>

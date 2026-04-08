@@ -4,3 +4,4 @@ Testcase:
 Fixes:
 Sprache i18n; Dropdown Räume bei Änderungen style anpassen;, Nutzer hinzufügen bei ändernungen; Löschen button + Modal; Farben A++; 
 Unnötige Funktionen löschen; Logo oben links; Wiki implementieren; evtl Error-Modals umstylen;
+Kapazität anzeigen; Buchungsfenster mit Kalender synchronisieren beim Ändern des Raums;

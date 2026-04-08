@@ -552,7 +552,7 @@ async function updateBookingHandler(req, res) {
 
         // booking exists?
         const [existsRows] = await pool.query(
-            "SELECT Benutzer_Id, Status, Raum_Id, DATE_FORMAT(Startzeit, '%Y-%m-%d %H:%i:00') AS start_db, DATE_FORMAT(Endzeit, '%Y-%m-%d %H:%i:00') AS end_db FROM Buchungen WHERE Buchung_Id = ? LIMIT 1", 
+            "SELECT Benutzer_Id, Status, Raum_Id, DATE_FORMAT(Startzeit, '%Y-%m-%d %H:%i:00') AS start_db, DATE_FORMAT(Endzeit, '%Y-%m-%d %H:%i:00') AS end_db FROM Buchungen WHERE Buchung_Id = ? LIMIT 1",
             [bookingId]
         )
         if (!existsRows.length) return res.status(404).json({ error: 'Buchung nicht gefunden' })
@@ -626,27 +626,27 @@ async function deleteBookingHandler(req, res) {
     try {
         const bookingId = Number(req.params.id)
         if (!Number.isFinite(bookingId)) return res.status(400).json({ error: 'Ungültige Buchungs-ID' })
-        
+
         const [existsRows] = await pool.query('SELECT Benutzer_Id, Raum_Id FROM Buchungen WHERE Buchung_Id = ? LIMIT 1', [bookingId])
         if (!existsRows.length) return res.status(404).json({ error: 'Buchung nicht gefunden' })
-        
+
         const existing = existsRows[0]
         const authUserId = await getBenutzerIdForRequestUser(req.user)
-        
+
         let roles = req.user?.realm_access?.roles || []
         const isGenehmiger = roles.includes("genehmiger")
-        
+
         if (existing.Benutzer_Id !== authUserId) {
             if (!isGenehmiger) {
                 return res.status(403).json({ error: 'Nur der Ersteller darf diese Buchung löschen.' })
             }
-            
+
             // Verifizieren dass der Genehmiger für diesen Raum berechtigt ist
             const [genehmigerRaumRows] = await pool.query(
-                'SELECT 1 FROM Genehmiger_Raum WHERE Raum_Id = ? AND Benutzer_Id = ? LIMIT 1', 
+                'SELECT 1 FROM Genehmiger_Raum WHERE Raum_Id = ? AND Benutzer_Id = ? LIMIT 1',
                 [existing.Raum_Id, authUserId]
             )
-            
+
             if (!genehmigerRaumRows.length) {
                 return res.status(403).json({ error: 'Sie sind nicht als Genehmiger für diesen Raum eingeteilt und dürfen die Buchung daher nicht löschen.' })
             }
@@ -903,7 +903,7 @@ app.post('/api/bookings', authenticate, async (req, res) => {
         // Default values
         const status = 'Geplant'
         const requesterId = Number.isFinite(Number(authUserId)) ? Number(authUserId) : null
-        
+
         const nameFinal = String(name || '').trim()
         const beschreibungFinal = String(beschreibung || '').trim() || null
 
