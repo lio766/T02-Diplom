@@ -771,6 +771,29 @@ async function getRoleID(keycloakRoles) {
     return roleID;
 }
 
+app.get('/api/roomrights', authenticate, requireRole("genehmiger"), async (req, res) => {
+    console.log('Checking room rights for user:', req.user)
+    const userId = await getBenutzerIdForRequestUser(req.user)
+    if (!Number.isFinite(Number(userId))) {
+        return res.status(404).json({ error: 'Benutzer nicht gefunden' })
+    }
+
+    const [rows] = await pool.query(
+        `SELECT 1 as ok
+             FROM Genehmiger_Raum gr
+             JOIN Raum r ON r.Raum_Id = gr.Raum_Id
+             WHERE gr.Benutzer_Id = ?
+             AND r.Raum_Id = ?`,
+        [Number(userId), Number(req.query.room_id)]
+    )
+
+    if (!rows.length) {
+        return res.json({ has_rights: false })
+    }
+    return res.json({ has_rights: true })
+}
+)
+
 app.get('/api/bookings', authenticate, async (req, res) => {
     console.log(req);
     try {

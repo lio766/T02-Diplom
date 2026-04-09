@@ -150,13 +150,11 @@ const isAdmin = computed(() => {
 const canEditCurrentBooking = computed(() => {
   return selectedBooking.value && selectedBooking.value.requester_sub === userId.value
 })
-const canDeleteCurrentBooking = computed(() => {
-  return (selectedBooking.value && selectedBooking.value.requester_sub === userId.value) || isGenehmiger.value
-})
+const canManageRoom = ref(false)
 
 const decidingId = ref(null)
 async function decideApproval(decision) {
-console.log('Entscheidung:', decision, 'für Buchung ID:', selectedBooking.value?.id)
+  console.log('Deciding', decision, 'for booking', selectedBooking.value)
   const id = Number(selectedBooking.value.id)
   if (!Number.isFinite(id)) return
 
@@ -165,7 +163,6 @@ console.log('Entscheidung:', decision, 'für Buchung ID:', selectedBooking.value
   //error.value = ''
 
   try {
-  console.log("Sende Entscheidung an API...", { id, decision })
     await api.put(`/approvals/${id}`, { decision })
     message.value = decision === 'approve' ? t('approvals.success.approved') : t('approvals.success.rejected')
   } catch (e) {
@@ -440,7 +437,7 @@ async function deleteBooking() {
 
   if (!selectedBooking.value?.id) { detailErr.value = t('calendar.messages.noBookingSelected'); return }
   if (!isLoggedIn.value) { detailErr.value = t('calendar.messages.loginRequired'); return }
-  if (!canDeleteCurrentBooking.value) { detailErr.value = t('calendar.messages.deleteRequired') || 'Nur der Ersteller oder ein Genehmiger darf löschen'; return }
+  if (!canManageRoom.value) { detailErr.value = t('calendar.messages.deleteRequired') || 'Nur der Ersteller oder ein Genehmiger darf löschen'; return }
 
   const ok = window.confirm(t('calendar.messages.confirmDelete'))
   if (!ok) return
@@ -508,6 +505,9 @@ async function loadBookings() {
   } finally {
     loadingBookings.value = false
   }
+  api.get(`/roomrights/`, { params: { room_id: roomId.value} }).then( res => {
+    canManageRoom.value = res.data?.has_rights
+  })
 }
 
 function bookingsForDay(dayDate) {
@@ -808,7 +808,7 @@ onMounted(async () => {
                      </div>
                   </div>
                   
-                  <div class="modal-actions" v-if="canDeleteCurrentBooking && !canEditCurrentBooking && !isApprovedStatus(selectedBooking.status)">
+                  <div class="modal-actions" v-if="canManageRoom && !canEditCurrentBooking && !isApprovedStatus(selectedBooking.status)">
                   <button
                     class="icon-btn reject"
                     type="button"
@@ -827,7 +827,7 @@ onMounted(async () => {
                   </button>
                   </div>
 
-                <div v-else-if="canDeleteCurrentBooking && isApprovedStatus(selectedBooking.status)" class="pending-approval">
+                <div v-else-if="canManageRoom && isApprovedStatus(selectedBooking.status)" class="pending-approval">
                      <button class="btn btn-text text-danger" type="button" :disabled="saving || deleting" @click="deleteBooking">
                         {{ deleting ? $t('calendar.modal.deleting') : $t('calendar.modal.delete') }}
                      </button>
