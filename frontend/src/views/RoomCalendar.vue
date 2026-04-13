@@ -183,7 +183,71 @@ const editStart = ref('')
 const editEnd = ref('')
 const editName = ref('')
 const editBeschreibung = ref('')
-const editParticipants = ref('')
+const editParticipantQuery = ref('')
+const editParticipantResults = ref([])
+const editParticipantLoading = ref(false)
+const editSelectedParticipants = ref([])
+const showEditParticipantDropdown = ref(false)
+
+let editSearchTimer = null
+let editCurrentAbort = null
+
+function editLabelForUser(u) {
+  const name = (u?.name || '').trim()
+  const email = (u?.email || '').trim()
+  if (name && email) return `${name} (${email})`
+  return name || email || ''
+}
+
+function editIsAlreadySelected(user) {
+  const id = Number(user?.id)
+  if (!Number.isFinite(id)) return false
+  return editSelectedParticipants.value.some((p) => Number(p.id) === id)
+}
+
+function editAddParticipant(user) {
+  if (!user || !Number.isFinite(Number(user.id))) return
+  if (editIsAlreadySelected(user)) return
+  editSelectedParticipants.value.push({ id: user.id, email: user.email, name: user.name })
+  editParticipantQuery.value = ''
+  editParticipantResults.value = []
+  showEditParticipantDropdown.value = false
+}
+
+function editRemoveParticipant(id) {
+  editSelectedParticipants.value = editSelectedParticipants.value.filter((p) => Number(p.id) !== Number(id))
+}
+
+async function editSearchUsers(q) {
+  editParticipantLoading.value = true
+  if (editCurrentAbort) editCurrentAbort.abort()
+  editCurrentAbort = new AbortController()
+  try {
+    const params = { limit: 12 }
+    if (q) params.q = q
+    const res = await api.get('/users', { params, signal: editCurrentAbort.signal })
+    editParticipantResults.value = Array.isArray(res.data) ? res.data : []
+  } catch (e) {
+    if (e?.name === 'AbortError' || e?.name === 'CanceledError' || e?.code === 'ERR_CANCELED') return
+    editParticipantResults.value = []
+  } finally {
+    editParticipantLoading.value = false
+  }
+}
+
+watch(editParticipantQuery, (q) => {
+  if (editSearchTimer) clearTimeout(editSearchTimer)
+  const query = String(q || '').trim()
+  if (!query) {
+    editParticipantResults.value = []
+    showEditParticipantDropdown.value = false
+    return
+  }
+  showEditParticipantDropdown.value = true
+  editSearchTimer = setTimeout(() => {
+    editSearchUsers(query)
+  }, 250)
+})
 
 const saving = ref(false)
 const deleting = ref(false)
@@ -207,6 +271,8 @@ const sortedBookings = computed(() => {
 
 onUnmounted(() => {
   clearInterval(nowTimer)
+  if (editSearchTimer) clearTimeout(editSearchTimer)
+  if (editCurrentAbort) editCurrentAbort.abort()
 })
 
 function parseTimeToMinutes(timeHHmm) {
@@ -342,10 +408,12 @@ function openDetails(b) {
   editEnd.value = String(b?.end_time ?? '')
   editName.value = String(b?.name ?? '')
   editBeschreibung.value = String(b?.beschreibung ?? '')
-  const emails = Array.isArray(b?.participants)
-    ? b.participants.map((p) => String(p?.email || '').trim()).filter(Boolean)
+  editSelectedParticipants.value = Array.isArray(b?.participants)
+    ? b.participants.map((p) => ({ id: p.id, email: p.email, name: p.name })).filter((p) => p.email)
     : []
-  editParticipants.value = emails.join(', ')
+  editParticipantQuery.value = ''
+  editParticipantResults.value = []
+  showEditParticipantDropdown.value = false
   detailMsg.value = ''
   detailErr.value = ''
 }
@@ -355,6 +423,12 @@ function closeDetails() {
   selectedBooking.value = null
 	detailMsg.value = ''
 	detailErr.value = ''
+  editSelectedParticipants.value = []
+  editParticipantQuery.value = ''
+  editParticipantResults.value = []
+  showEditParticipantDropdown.value = false
+  if (editSearchTimer) clearTimeout(editSearchTimer)
+  if (editCurrentAbort) editCurrentAbort.abort()
 }
 
 function parseEmails(text) {
@@ -421,7 +495,9 @@ async function executeSaveBooking() {
         end_time: editEnd.value,
         name: editName.value,
         beschreibung: editBeschreibung.value,
-        participant_emails: parseEmails(editParticipants.value),
+        participant_emails: editSelectedParticipants.value
+          .map((p) => String(p.email || '').trim())
+          .filter(Boolean),
     })
 
     detailMsg.value = t('calendar.messages.changesSaved')
@@ -772,10 +848,44 @@ onMounted(async () => {
                      <label for="edit-desc" class="form-label">{{ $t('bookingForm.description') }}</label>
                      <textarea id="edit-desc" v-model="editBeschreibung" class="form-input" rows="2" :placeholder="$t('bookingForm.descriptionPlaceholder')"></textarea>
                   </div>
-                  <div class="form-group">
+                  <div class="form-group edit-participant-section">
                      <label for="edit-parts" class="form-label">{{ $t('calendar.modal.participants') }}</label>
-                     <textarea id="edit-parts" v-model="editParticipants" class="form-input font-mono" rows="3" placeholder="mail1@example.com, mail2@example.com"></textarea>
-                     <small class="form-hint">{{ $t('calendar.modal.participantsHint') }}</small>
+                     <div class="edit-search-wrapper">
+                        <input
+                           id="edit-parts"
+                           v-model="editParticipantQuery"
+                           class="form-input"
+                           type="text"
+                           :placeholder="$t('bookingForm.searchPlaceholder')"
+                           @focus="showEditParticipantDropdown = !!editParticipantQuery"
+                        />
+                        <div v-if="editParticipantLoading" class="edit-spinner-sm"></div>
+                     </div>
+                     <div v-if="showEditParticipantDropdown && editParticipantResults.length && editParticipantQuery" class="edit-search-dropdown">
+                        <button
+                           type="button"
+                           v-for="u in editParticipantResults"
+                           :key="u.id"
+                           class="edit-dropdown-item"
+                           @click="editAddParticipant(u)"
+                        >
+                           <div class="edit-avatar-sm">{{ (u.name?.[0] || u.email?.[0] || '?').toUpperCase() }}</div>
+                           <div class="edit-user-info">
+                              <div class="edit-user-name">{{ u.name || 'Unbekannt' }}</div>
+                              <div class="edit-user-email">{{ u.email }}</div>
+                           </div>
+                           <div v-if="editIsAlreadySelected(u)" class="edit-already-badge">✓</div>
+                        </button>
+                     </div>
+                     <div v-else-if="showEditParticipantDropdown && editParticipantQuery && !editParticipantLoading" class="edit-search-dropdown edit-empty">
+                        {{ $t('bookingForm.noResults') }}
+                     </div>
+                     <div v-if="editSelectedParticipants.length" class="edit-selected-list">
+                        <div v-for="p in editSelectedParticipants" :key="p.id" class="edit-chip">
+                           <span class="edit-chip-label">{{ p.name || p.email }}</span>
+                           <button type="button" class="edit-chip-remove" @click="editRemoveParticipant(p.id)">✕</button>
+                        </div>
+                     </div>
                   </div>
 
                   <div class="modal-actions">
@@ -1736,6 +1846,90 @@ textarea.form-input {
   opacity: 1;
   background-color: var(--color-bg-secondary);
 }
+
+/* Edit Participant Dropdown */
+.edit-participant-section {
+  position: relative;
+  min-width: 0;
+}
+.edit-search-wrapper {
+  position: relative;
+}
+.edit-search-dropdown {
+  position: absolute;
+  top: 100%; left: 0; right: 0;
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+  z-index: 50;
+  max-height: 200px;
+  overflow-y: auto;
+  margin-top: 4px;
+}
+.edit-dropdown-item {
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: 0;
+  font-family: inherit;
+  color: inherit;
+  font-size: 1rem;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--color-bg-secondary);
+}
+.edit-dropdown-item:last-child { border-bottom: none; }
+.edit-dropdown-item:hover { background-color: var(--color-bg-accent); }
+.edit-empty { padding: 12px; color: var(--color-text-muted); font-size: 0.9rem; text-align: center; }
+
+.edit-avatar-sm {
+  width: 32px; height: 32px;
+  background-color: var(--color-primary-light);
+  color: var(--color-primary);
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 0.8rem;
+  flex-shrink: 0;
+}
+.edit-user-info { flex: 1; min-width: 0; }
+.edit-user-name { font-weight: 500; font-size: 0.9rem; }
+.edit-user-email { font-size: 0.8rem; color: var(--color-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.edit-already-badge { color: var(--color-success); font-weight: bold; }
+
+.edit-selected-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.edit-chip {
+  background: var(--color-bg-accent);
+  padding: 4px 8px;
+  border-radius: 16px;
+  display: flex; align-items: center; gap: 6px;
+  font-size: 0.85rem;
+}
+.edit-chip-remove {
+  background: none; border: none; cursor: pointer;
+  color: var(--color-text-muted); font-size: 1rem;
+  padding: 0; line-height: 1;
+}
+.edit-chip-remove:hover { color: var(--color-danger); }
+
+.edit-spinner-sm {
+  position: absolute; right: 10px; top: 10px;
+  width: 16px; height: 16px;
+  border: 2px solid var(--color-border);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: edit-spin 0.6s linear infinite;
+}
+@keyframes edit-spin { to { transform: rotate(360deg); } }
 </style>
 
 
