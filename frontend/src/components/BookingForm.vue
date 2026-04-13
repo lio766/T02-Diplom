@@ -6,17 +6,26 @@ import api from '../lib/api.js';
 const { isPending, isAuthenticated, username, userId, keycloak, roles, hasRoles } = useKeycloak();
 const { t } = useI18n()
 const props = defineProps({
-  rooms: { type: Array, default: () => [] }
+  rooms: { type: Array, default: () => [] },
+  selectedRoomId: { type: String, default: '' }
 })
 
-const emit = defineEmits(['booking-created', 'close'])
+const emit = defineEmits(['booking-created', 'close', 'update:selectedRoomId'])
 
 const getTodayIso = () => {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-const roomId = ref('')
+const roomId = ref(props.selectedRoomId || '')
+
+watch(() => props.selectedRoomId, (newVal) => {
+  if (newVal) roomId.value = newVal
+})
+
+watch(roomId, (newVal) => {
+  emit('update:selectedRoomId', newVal)
+})
 const date = ref(getTodayIso())
 const start = ref('08:00')
 const end = ref('09:00')
@@ -192,7 +201,7 @@ async function submit() {
   <div class="booking-form-panel">
     <header class="panel-header">
       <h2>{{ $t('bookingForm.newBooking') }}</h2>
-      <button class="close-btn" type="button" @click="emit('close')" :aria-label="$t('bookingForm.close')">✕</button>
+      <button class="close-btn" type="button" @click="emit('close')" :aria-label="$t('bookingForm.close')"><i class="pi pi-times"></i></button>
     </header>
 
     <div class="panel-body">
@@ -280,7 +289,7 @@ async function submit() {
                     <div class="user-name">{{ u.name || 'Unbekannt' }}</div>
                     <div class="user-email">{{ u.email }}</div>
                  </div>
-                 <div v-if="isAlreadySelected(u)" class="already-badge">✓</div>
+                 <div v-if="isAlreadySelected(u)" class="already-badge"><i class="pi pi-check"></i></div>
               </button>
            </div>
            <div v-else-if="showParticipantDropdown && participantQuery && !participantLoading" class="search-dropdown empty">
@@ -293,7 +302,7 @@ async function submit() {
            <label class="form-label mb-2">{{ $t('bookingForm.selected') }}</label>
            <div v-for="p in selectedParticipants" :key="p.id" class="chip">
               <span class="chip-label">{{ p.name || p.email }}</span>
-              <button type="button" class="chip-remove" @click="removeParticipant(p.id)" :aria-label="$t('bookingForm.removeParticipant')">✕</button>
+              <button type="button" class="chip-remove" @click="removeParticipant(p.id)" :aria-label="$t('bookingForm.removeParticipant')"><i class="pi pi-times"></i></button>
            </div>
         </div>
 
@@ -310,7 +319,7 @@ async function submit() {
       <div class="modal error-modal" role="dialog" aria-modal="true">
         <header class="modal-header">
           <h2 class="modal-title">{{ $t('common.error') || 'Fehler' }}</h2>
-          <button class="close-btn" type="button" @click="error = ''" :aria-label="$t('calendar.modal.close') || 'Schließen'">✕</button>
+          <button class="close-btn" type="button" @click="error = ''" :aria-label="$t('calendar.modal.close') || 'Schließen'"><i class="pi pi-times"></i></button>
         </header>
 
         <div class="modal-body">
@@ -583,7 +592,7 @@ async function submit() {
   margin-bottom: var(--space-4);
   font-size: 0.9rem;
 }
-.is-success { background-color: #dcfce7; color: #166534; }
-.is-error { background-color: #fee2e2; color: #991b1b; }
+.is-success { background-color: var(--color-success-bg, #dcfce7); color: var(--color-success, #166534); border: 1px solid rgba(22, 163, 74, 0.3); }
+.is-error { background-color: var(--color-danger-bg, #fee2e2); color: var(--color-danger, #991b1b); border: 1px solid rgba(220, 38, 38, 0.3); }
 .mb-2 { margin-bottom: 0.5rem; }
 </style>

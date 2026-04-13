@@ -82,6 +82,13 @@ function participantLabel(p) {
   return name || email || ''
 }
 
+function formatGermanDate(isoString) {
+  if (!isoString) return ''
+  const parts = isoString.split('-')
+  if (parts.length !== 3) return isoString
+  return `${parts[2]}.${parts[1]}.${parts[0]}`
+}
+
 function requesterLabel(item) {
   const name = String(item?.requester_name || '').trim()
   const email = String(item?.requester_email || '').trim()
@@ -243,28 +250,28 @@ onMounted(() => {
                 </td>
                 <td>{{ requesterLabel(item) }}</td>
                 <td>
-                  {{ item.date }}
+                  {{ formatGermanDate(item.date) }}
                   <div class="time-subline">{{ item.start_time }} - {{ item.end_time }}</div>
                 </td>
                 <td class="actions-cell">
-                  <button
-                    class="icon-btn reject"
-                    type="button"
-                    :disabled="isDeciding(item.id)"
-                    @click="decideApproval(item, 'reject')"
-                    :title="$t('approvals.reject')"
-                  >
-                    X
-                  </button>
-                  <button
-                    class="icon-btn approve"
-                    type="button"
-                    :disabled="isDeciding(item.id)"
-                    @click="decideApproval(item, 'approve')"
-                    :title="$t('approvals.approve')"
-                  >
-                    ✓
-                  </button>
+                  <div class="action-buttons-inline">
+                    <button
+                      class="btn btn-danger btn-sm"
+                      type="button"
+                      :disabled="isDeciding(item.id)"
+                      @click="decideApproval(item, 'reject')"
+                    >
+                      <i class="pi pi-times"></i>&nbsp;{{ $t('approvals.reject') }}
+                    </button>
+                    <button
+                      class="btn btn-success btn-sm"
+                      type="button"
+                      :disabled="isDeciding(item.id)"
+                      @click="decideApproval(item, 'approve')"
+                    >
+                      <i class="pi pi-check"></i>&nbsp;{{ $t('approvals.approve') }}
+                    </button>
+                  </div>
                 </td>
               </tr>
               <tr v-if="!loading && filteredApprovals.length === 0">
@@ -281,7 +288,7 @@ onMounted(() => {
         <div class="modal" role="dialog" aria-modal="true">
           <header class="modal-header">
             <h2 class="modal-title">{{ selectedApproval.name || $t('approvals.untitled') }}</h2>
-            <button class="close-btn" type="button" @click="closeDetails" :aria-label="$t('approvals.close')">✕</button>
+            <button class="close-btn" type="button" @click="closeDetails" :aria-label="$t('approvals.close')"><i class="pi pi-times"></i></button>
           </header>
 
           <div class="modal-body">
@@ -296,7 +303,7 @@ onMounted(() => {
               </div>
               <div class="detail-item">
                 <span class="label">{{ $t('approvals.time') }}</span>
-                <span class="value">{{ selectedApproval.date }} <br> {{ selectedApproval.start_time }} - {{ selectedApproval.end_time }}</span>
+                <span class="value">{{ formatGermanDate(selectedApproval.date) }} <br> {{ selectedApproval.start_time }} - {{ selectedApproval.end_time }}</span>
               </div>
               <div class="detail-item">
                 <span class="label">{{ $t('approvals.statusLabel') }}</span>
@@ -326,7 +333,7 @@ onMounted(() => {
                 :disabled="isDeciding(selectedApproval.id)"
                 @click="decideApproval(selectedApproval, 'reject')"
               >
-                X {{ $t('approvals.reject') }}
+                <i class="pi pi-times"></i>&nbsp;{{ $t('approvals.reject') }}
               </button>
               <button
                 class="btn btn-success"
@@ -334,7 +341,7 @@ onMounted(() => {
                 :disabled="isDeciding(selectedApproval.id)"
                 @click="decideApproval(selectedApproval, 'approve')"
               >
-                ✓ {{ $t('approvals.approve') }}
+                <i class="pi pi-check"></i>&nbsp;{{ $t('approvals.approve') }}
               </button>
             </div>
           </div>
@@ -458,6 +465,12 @@ onMounted(() => {
   margin-top: 0.1rem;
 }
 
+.action-buttons-inline {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
 .icon-btn {
   width: 34px;
   height: 34px;
@@ -470,19 +483,19 @@ onMounted(() => {
 }
 
 .icon-btn.reject {
-  background: #ef4444;
+  background: var(--color-danger);
 }
 
 .icon-btn.reject:hover {
-  background: #dc2626;
+  background: #b91c1c;
 }
 
 .icon-btn.approve {
-  background: #16a34a;
+  background: var(--color-success);
 }
 
 .icon-btn.approve:hover {
-  background: #15803d;
+  background: #14532d;
 }
 
 .modal-backdrop {
@@ -664,26 +677,6 @@ onMounted(() => {
 
 .message {
   margin-bottom: var(--space-4);
-}
-
-.btn-success {
-  background: #16a34a;
-  color: #fff;
-  border: none;
-}
-
-.btn-success:hover {
-  background: #15803d;
-}
-
-.btn-danger {
-  background: #ef4444;
-  color: #fff;
-  border: none;
-}
-
-.btn-danger:hover {
-  background: #dc2626;
 }
 
 @media (max-width: 900px) {

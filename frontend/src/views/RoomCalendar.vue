@@ -49,18 +49,21 @@ function selectRoom(id) {
   showRoomDropdown.value = false
 }
 
-function closeRoomDropdown(e) {
-  if (!e.target.closest('.room-dropdown-wrapper')) {
+function closeDropdowns(e) {
+  if (!e.target.closest('.room-dropdown-wrapper') && showRoomDropdown.value !== undefined) {
     showRoomDropdown.value = false
+  }
+  if (!e.target.closest('.edit-room-dropdown-wrapper') && showEditRoomDropdown) {
+    showEditRoomDropdown.value = false
   }
 }
 
 onMounted(() => {
-  document.addEventListener('click', closeRoomDropdown)
+  document.addEventListener('click', closeDropdowns)
 })
 
 onUnmounted(() => {
-  document.removeEventListener('click', closeRoomDropdown)
+  document.removeEventListener('click', closeDropdowns)
   clearInterval(nowTimer)
 })
 
@@ -186,6 +189,21 @@ const editParticipantLoading = ref(false)
 const editSelectedParticipants = ref([])
 const showEditParticipantDropdown = ref(false)
 
+const showEditRoomDropdown = ref(false)
+const currentEditRoomName = computed(() => {
+  const r = rooms.value.find(r => String(r.id) === editRoomId.value)
+  return r ? (r.name || r.Bezeichnung || r.bezeichnung) : (t('calendar.selectRoom') || 'Select Room')
+})
+
+function toggleEditRoomDropdown() {
+  showEditRoomDropdown.value = !showEditRoomDropdown.value
+}
+
+function selectEditRoom(id) {
+  editRoomId.value = String(id)
+  showEditRoomDropdown.value = false
+}
+
 let editSearchTimer = null
 let editCurrentAbort = null
 
@@ -251,6 +269,7 @@ const deleting = ref(false)
 const detailMsg = ref('')
 const detailErr = ref('')
 const showReapprovalModal = ref(false)
+const showDeleteConfirmModal = ref(false)
 
 const todayIso = computed(() => toIsoDate(new Date()))
 
@@ -507,17 +526,19 @@ async function executeSaveBooking() {
   }
 }
 
-async function deleteBooking() {
+async function checkDeleteBooking() {
   detailMsg.value = ''
   detailErr.value = ''
 
   if (!selectedBooking.value?.id) { detailErr.value = t('calendar.messages.noBookingSelected'); return }
   if (!isLoggedIn.value) { detailErr.value = t('calendar.messages.loginRequired'); return }
-  if (!canManageRoom.value) { detailErr.value = t('calendar.messages.deleteRequired') || 'Nur der Ersteller oder ein Genehmiger darf löschen'; return }
+  if (!canManageRoom.value && !canEditCurrentBooking.value) { detailErr.value = t('calendar.messages.deleteRequired') || 'Nur der Ersteller oder ein Genehmiger darf löschen'; return }
 
-  const ok = window.confirm(t('calendar.messages.confirmDelete'))
-  if (!ok) return
+  showDeleteConfirmModal.value = true
+}
 
+async function executeDeleteBooking() {
+  showDeleteConfirmModal.value = false
   deleting.value = true
   try {
     await api.delete(`/bookings/${selectedBooking.value.id}`)
@@ -584,6 +605,13 @@ async function loadBookings() {
   api.get(`/roomrights/`, { params: { room_id: roomId.value} }).then( res => {
     canManageRoom.value = res.data?.has_rights
   })
+}
+
+function formatGermanDate(isoString) {
+  if (!isoString) return ''
+  const parts = isoString.split('-')
+  if (parts.length !== 3) return isoString
+  return `${parts[2]}.${parts[1]}.${parts[0]}`
 }
 
 function bookingsForDay(dayDate) {
@@ -731,7 +759,7 @@ onMounted(async () => {
                          class="booking-item"
                          :class="bookingStatusClass(b)"
                          :style="bookingStyle(b)"
-                         :title="`${b.start_time}–${b.end_time} ${bookingParticipantsLabel(b)}`.trim()"
+                         :title="`${b.start_time}–${b.end_time} ${b.name || $t('approvals.untitled')}`.trim()"
                          role="button"
                          tabindex="0"
                          @click="openDetails(b)"
@@ -740,7 +768,7 @@ onMounted(async () => {
                           <div class="booking-time">{{ b.start_time }} · {{ bookingStatusLabel(b) }}</div>
                           <div class="booking-title">
                              <span v-if="onlyMine && b.room" style="font-weight: bold; margin-right: 4px;">{{ b.room }}:</span>
-                             {{ bookingParticipantsLabel(b) }}
+                             {{ b.name || $t('approvals.untitled') }}
                           </div>
                        </div>
                     </div>
@@ -765,7 +793,7 @@ onMounted(async () => {
                  </thead>
                  <tbody>
                     <tr v-for="b in sortedBookings" :key="b.id">
-                       <td>{{ toIsoDate(b.date) }}</td>
+                       <td>{{ formatGermanDate(toIsoDate(b.date)) }}</td>
                        <td class="whitespace-nowrap">{{ b.start_time }} – {{ b.end_time }}</td>
                        <td>
                           {{ rooms.find(r => String(r.id) === String(b.room_id))?.name || $t('calendar.table.unknownRoom') }}
@@ -774,7 +802,7 @@ onMounted(async () => {
                           <span class="status-badge" :class="bookingStatusClass(b)">{{ bookingStatusLabel(b) }}</span>
                         </td>
                        <td>
-                          <div class="cell-title" :title="bookingParticipantsLabel(b)">{{ bookingParticipantsLabel(b) }}</div>
+                          <div class="cell-title" :title="b.name">{{ b.name || $t('approvals.untitled') }}</div>
                        </td>
                        <td style="text-align: right;">
                           <button class="btn-icon" @click="openDetails(b)" title="Bearbeiten/Details">✏️</button>
@@ -793,6 +821,7 @@ onMounted(async () => {
       <aside v-if="showBookingPanel" class="booking-sidebar">
          <BookingForm 
             :rooms="rooms"
+            v-model:selectedRoomId="roomId"
             @close="showBookingPanel = false"
             @booking-created="() => { loadBookings(); showBookingPanel = false; }"
          />
@@ -805,7 +834,7 @@ onMounted(async () => {
          <div class="modal" role="dialog" aria-modal="true">
             <header class="modal-header">
                <h2 class="modal-title">{{ $t('calendar.modal.title') }}</h2>
-               <button class="close-btn" type="button" @click="closeDetails" :aria-label="$t('calendar.modal.close')">✕</button>
+               <button class="close-btn" type="button" @click="closeDetails" :aria-label="$t('calendar.modal.close')"><i class="pi pi-times"></i></button>
             </header>
 
             <div v-if="selectedBooking" class="modal-body">
@@ -817,13 +846,25 @@ onMounted(async () => {
                <template v-if="canEditCurrentBooking">
                   <div class="form-group">
                      <label for="edit-room-id" class="form-label">{{ $t('calendar.modal.room') }}</label>
-                     <div class="select-wrapper">
-                        <select id="edit-room-id" v-model="editRoomId" class="form-input">
-                           <option v-for="r in rooms" :key="r.id" :value="String(r.id)">
-                              {{ r.name || r.Bezeichnung || r.bezeichnung }}
-                           </option>
-                        </select>
-                        <span class="select-arrow">▼</span>
+                     <div class="room-dropdown-wrapper edit-room-dropdown-wrapper">
+                        <button class="room-toggle-btn form-input" style="justify-content: space-between; display: flex; align-items: center;" type="button" @click="toggleEditRoomDropdown" :title="$t('calendar.selectRoom') || 'Select Room'" :disabled="loadingRooms">
+                          <span>{{ currentEditRoomName }}</span>
+                          <span class="dropdown-arrow">▼</span>
+                        </button>
+                        <Transition name="slide-fade">
+                          <div v-show="showEditRoomDropdown" class="user-dropdown room-menu-dropdown">
+                            <button 
+                              v-for="r in rooms" 
+                              :key="r.id" 
+                              type="button"
+                              @click="selectEditRoom(r.id)" 
+                              class="dropdown-item room-item"
+                              :class="{ 'is-active': String(r.id) === editRoomId }"
+                            >
+                               {{ r.name || r.Bezeichnung || r.bezeichnung }}
+                            </button>
+                          </div>
+                        </Transition>
                      </div>
                   </div>
                   <div class="form-row">
@@ -874,7 +915,7 @@ onMounted(async () => {
                               <div class="edit-user-name">{{ u.name || 'Unbekannt' }}</div>
                               <div class="edit-user-email">{{ u.email }}</div>
                            </div>
-                           <div v-if="editIsAlreadySelected(u)" class="edit-already-badge">✓</div>
+                           <div v-if="editIsAlreadySelected(u)" class="edit-already-badge"><i class="pi pi-check"></i></div>
                         </button>
                      </div>
                      <div v-else-if="showEditParticipantDropdown && editParticipantQuery && !editParticipantLoading" class="edit-search-dropdown edit-empty">
@@ -883,7 +924,7 @@ onMounted(async () => {
                      <div v-if="editSelectedParticipants.length" class="edit-selected-list">
                         <div v-for="p in editSelectedParticipants" :key="p.id" class="edit-chip">
                            <span class="edit-chip-label">{{ p.name || p.email }}</span>
-                           <button type="button" class="edit-chip-remove" @click="editRemoveParticipant(p.id)">✕</button>
+                           <button type="button" class="edit-chip-remove" @click="editRemoveParticipant(p.id)"><i class="pi pi-times"></i></button>
                         </div>
                      </div>
                   </div>
@@ -892,7 +933,7 @@ onMounted(async () => {
                      <button class="btn btn-primary" type="button" :disabled="saving || deleting" @click="saveBooking">
                         {{ saving ? $t('calendar.modal.saving') : $t('calendar.modal.save') }}
                      </button>
-                     <button class="btn btn-text text-danger" type="button" :disabled="saving || deleting" @click="deleteBooking">
+                     <button class="btn btn-text text-danger" type="button" :disabled="saving || deleting" @click="checkDeleteBooking">
                         {{ deleting ? $t('calendar.modal.deleting') : $t('calendar.modal.delete') }}
                      </button>
                   </div>
@@ -905,11 +946,11 @@ onMounted(async () => {
                         <span class="value">{{ selectedBooking.room || rooms.find(r => String(r.id) === String(selectedBooking.room_id))?.name || '---' }}</span>
                      </div>
                      <div class="detail-item">
-                        <span class="label">Name</span>
+                        <span class="label">{{ $t('calendar.modal.name') }}</span>
                         <span class="value">{{ selectedBooking.name || '---' }}</span>
                      </div>
                      <div class="detail-item" v-if="selectedBooking.beschreibung">
-                        <span class="label">Beschreibung</span>
+                        <span class="label">{{ $t('calendar.modal.description') }}</span>
                         <span class="value">{{ selectedBooking.beschreibung }}</span>
                      </div>
                      <div class="detail-item">
@@ -919,26 +960,26 @@ onMounted(async () => {
                   </div>
                   
                   <div class="modal-actions" v-if="canManageRoom && !canEditCurrentBooking && !isApprovedStatus(selectedBooking.status)">
-                  <button
-                    class="icon-btn reject"
-                    type="button"
-                    @click="decideApproval('reject')"
-                    :title="$t('approvals.reject')"
-                  >
-                    X
-                  </button>
-                  <button
-                    class="icon-btn approve"
-                    type="button"
-                    @click="decideApproval('approve')"
-                    :title="$t('approvals.approve')"
-                  >
-                    ✓
-                  </button>
+                     <button
+                        class="btn btn-danger"
+                        type="button"
+                        :disabled="saving || deleting"
+                        @click="decideApproval('reject')"
+                     >
+                        <i class="pi pi-times"></i>&nbsp;{{ $t('approvals.reject') }}
+                     </button>
+                     <button
+                        class="btn btn-success"
+                        type="button"
+                        :disabled="saving || deleting"
+                        @click="decideApproval('approve')"
+                     >
+                        <i class="pi pi-check"></i>&nbsp;{{ $t('approvals.approve') }}
+                     </button>
                   </div>
 
                 <div v-else-if="canManageRoom && isApprovedStatus(selectedBooking.status)" class="pending-approval">
-                     <button class="btn btn-text text-danger" type="button" :disabled="saving || deleting" @click="deleteBooking">
+                     <button class="btn btn-text text-danger" type="button" :disabled="saving || deleting" @click="checkDeleteBooking">
                         {{ deleting ? $t('calendar.modal.deleting') : $t('calendar.modal.delete') }}
                      </button>
                   </div>
@@ -967,7 +1008,7 @@ onMounted(async () => {
         <div class="modal error-modal" role="dialog" aria-modal="true">
           <header class="modal-header">
             <h2 class="modal-title">{{ $t('common.error') || 'Fehler' }}</h2>
-            <button class="close-btn" type="button" @click="detailErr = ''" :aria-label="$t('calendar.modal.close') || 'Schließen'">✕</button>
+            <button class="close-btn" type="button" @click="detailErr = ''" :aria-label="$t('calendar.modal.close') || 'Schließen'"><i class="pi pi-times"></i></button>
           </header>
 
           <div class="modal-body">
@@ -977,9 +1018,33 @@ onMounted(async () => {
           </div>
 
           <div class="modal-actions" style="display: flex; justify-content: flex-end; padding: var(--space-4); border-top: 1px solid var(--color-border); background: var(--color-bg-secondary); border-radius: 0 0 var(--radius-xl) var(--radius-xl);">
-            <button class="btn btn-secondary" type="button" @click="detailErr = ''">OK</button>
+            <button class="btn btn-secondary" type="button" @click="detailErr = ''">{{ $t('common.ok') || 'OK' }}</button>
           </div>
         </div>
+      </div>
+    </Teleport>
+
+    <!-- Delete Confirmation Modal -->
+    <Teleport to="body">
+      <div v-if="showDeleteConfirmModal" class="modal-backdrop" @click.self="showDeleteConfirmModal = false">
+         <div class="modal error-modal" role="dialog" aria-modal="true">
+            <header class="modal-header">
+               <h2 class="modal-title">{{ $t('calendar.messages.confirmDelete') }}</h2>
+               <button class="close-btn" type="button" @click="showDeleteConfirmModal = false" :aria-label="$t('calendar.modal.close') || 'Schließen'"><i class="pi pi-times"></i></button>
+            </header>
+
+            <div class="modal-body">
+               <br>
+               {{ $t('common.deleteConfirmText') || 'Bist du sicher, dass du diese Buchung löschen möchtest?' }}
+            </div>
+
+            <div class="modal-actions" style="margin-top: 1rem; justify-content: flex-end; display: flex; gap: 0.5rem; padding: var(--space-4); border-top: 1px solid var(--color-border); background: var(--color-bg-secondary); border-radius: 0 0 var(--radius-xl) var(--radius-xl);">
+               <button class="btn btn-secondary" type="button" :disabled="deleting" @click="showDeleteConfirmModal = false">{{ $t('common.cancel') || 'Abbrechen' }}</button>
+               <button class="btn btn-primary" type="button" :disabled="deleting" @click="executeDeleteBooking" style="background: var(--color-danger); border-color: var(--color-danger)">
+                  {{ deleting ? $t('calendar.modal.deleting') : ($t('calendar.modal.delete') || 'Ja, löschen') }}
+               </button>
+            </div>
+         </div>
       </div>
     </Teleport>
 
@@ -988,23 +1053,21 @@ onMounted(async () => {
       <div v-if="showReapprovalModal" class="modal-backdrop" @click.self="showReapprovalModal = false">
          <div class="modal error-modal" role="dialog" aria-modal="true">
             <header class="modal-header">
-               <h2 class="modal-title">Achtung: Erneute Genehmigung erforderlich</h2>
-               <button class="close-btn" type="button" @click="showReapprovalModal = false" :aria-label="$t('calendar.modal.close') || 'Schließen'">✕</button>
+               <h2 class="modal-title">{{ $t('calendar.modal.reapprovalTitle') || 'Achtung: Erneute Genehmigung erforderlich' }}</h2>
+               <button class="close-btn" type="button" @click="showReapprovalModal = false" :aria-label="$t('calendar.modal.close') || 'Schließen'"><i class="pi pi-times"></i></button>
             </header>
 
             <div class="modal-body">
-               <p style="margin-bottom: var(--space-4);">
-                 Du hast Änderungen an Raum, Datum oder Uhrzeit vorgenommen. <br><br>
-                 Da dieses Meeting bereits <strong>genehmigt</strong> war, führt die Speicherung dazu, dass der Status wieder auf <strong>"Geplant"</strong> zurückgesetzt wird und das Meeting neu genehmigt werden muss.
+               <p style="margin-bottom: var(--space-4);" v-html="$t('calendar.modal.reapprovalText')">
                </p>
                <p style="font-weight: bold; color: var(--color-danger);">
-                 Möchtest du diese Änderungen trotzdem speichern?
+                 {{ $t('calendar.modal.reapprovalWarning') || 'Möchtest du diese Änderungen trotzdem speichern?' }}
                </p>
             </div>
 
             <div class="modal-actions" style="display: flex; justify-content: flex-end; gap: var(--space-3); padding: var(--space-4); border-top: 1px solid var(--color-border); background: var(--color-bg-secondary); border-radius: 0 0 var(--radius-xl) var(--radius-xl);">
-               <button class="btn btn-secondary" type="button" @click="showReapprovalModal = false">Abbrechen</button>
-               <button class="btn btn-primary" type="button" @click="executeSaveBooking">Trotzdem speichern</button>
+               <button class="btn btn-secondary" type="button" @click="showReapprovalModal = false">{{ $t('common.cancel') || 'Abbrechen' }}</button>
+               <button class="btn btn-primary" type="button" @click="executeSaveBooking">{{ $t('common.saveAndReapprove') || 'Trotzdem speichern' }}</button>
             </div>
          </div>
       </div>
@@ -1461,11 +1524,12 @@ onMounted(async () => {
 
 .booking-item.is-planned {
   background-color: #f59e0b;
+  color: #000000;
   border: 1px solid rgba(146, 64, 14, 0.25);
 }
 
 .booking-item.is-approved {
-  background-color: #16a34a;
+  background-color: #166534;
   color: #ffffff;
   border: 1px solid rgba(255, 255, 255, 0.2);
 }

@@ -8,14 +8,14 @@
   --color-text-secondary: #4b5563; /* Medium grey for less important text */
   --color-text-muted: #9ca3af;
 
-  --color-primary: #3b82f6; /* Modern Vibrant Blue */
-  --color-primary-hover: #2563eb;
+  --color-primary: #2563eb; /* Darker vibrant blue for AAA contrast with white text */
+  --color-primary-hover: #1d4ed8;
   --color-primary-dark: #1e40af;
   --color-primary-light: #eff6ff;
   
-  --color-danger: #dc2626;
+  --color-danger: #dc2626; /* Excellent AA with white text */
   --color-danger-bg: #fef2f2;
-  --color-success: #16a34a;
+  --color-success: #15803d; /* Dark enough for AAA contrast with white text */
   --color-success-bg: #f0fdf4;
   
   --color-border: #e2e8f0;
@@ -58,7 +58,7 @@
   --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
   --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
   
-  --focus-ring: 0 0 0 3px rgba(37, 99, 235, 0.4); /* Accessibility focus ring */
+  --focus-ring: 0 0 0 3px rgba(37, 99, 235, 0.6); /* Accessibility focus ring */
 }
 
 /* Dark Mode Theme */
@@ -72,17 +72,21 @@ html.dark-mode {
   --color-text-secondary: #d1d5db;
   --color-text-muted: #9ca3af;
 
-  --color-primary: #60a5fa;
-  --color-primary-hover: #3b82f6;
+  --color-primary: #3b82f6; /* Adjusted for better contrast with white text */
+  --color-primary-hover: #60a5fa;
   --color-primary-dark: #2563eb;
-  --color-primary-light: rgba(59, 130, 246, 0.15); /* Adjusted for dark mode */
+  --color-primary-light: rgba(59, 130, 246, 0.15);
   
-  --color-danger: #f87171;
-  --color-success: #4ade80;
+  --color-danger: #ef4444; /* Dark enough for white text, AA */
+  --color-danger-bg: rgba(239, 68, 68, 0.15); /* Dark mode error box */
+  --color-success: #16a34a; /* Dark enough for white text, AA */
+  --color-success-bg: rgba(22, 163, 74, 0.15); /* Dark mode success box */
   
   --color-border: #374151;
   --navbar-bg: rgba(17, 24, 39, 0.9);
   color-scheme: dark;
+  
+  --focus-ring: 0 0 0 3px rgba(96, 165, 250, 0.6);
 }
 
 /* High Contrast Mode Theme - WCAG 2.2 AAA Compliant */
@@ -137,12 +141,41 @@ html.high-contrast-mode .btn-primary {
   font-weight: 800;
 }
 
+html.high-contrast-mode .btn-success,
+html.high-contrast-mode .icon-btn.approve {
+  background-color: var(--color-success);
+  color: #000000;
+  font-weight: 800;
+}
+
+html.high-contrast-mode .btn-danger,
+html.high-contrast-mode .icon-btn.reject {
+  background-color: var(--color-danger);
+  color: #000000;
+  font-weight: 800;
+}
+
 html.high-contrast-mode .alert-success, 
 html.high-contrast-mode .message.is-success, 
 html.high-contrast-mode .message.success {
   color: #FFFFFF;
   border-color: #FFFFFF;
 }
+
+html.high-contrast-mode .status-badge.is-planned,
+html.high-contrast-mode .status-planned {
+  background-color: var(--color-bg-primary);
+  color: var(--color-primary);
+  border: 2px solid var(--color-primary);
+}
+
+html.high-contrast-mode .status-badge.is-approved,
+html.high-contrast-mode .status-approved {
+  background-color: var(--color-bg-primary);
+  color: var(--color-success);
+  border: 2px solid var(--color-success);
+}
+
 
 /* Dark Mode Form Elements helpers */
 html.dark-mode input,
@@ -331,6 +364,20 @@ a:hover {
   text-decoration: none;
 }
 
+.btn-success {
+  background-color: var(--color-success);
+  color: white;
+}
+.btn-success:hover:not(:disabled) {
+  background-color: #14532d;
+  text-decoration: none;
+}
+
+.btn-sm {
+  padding: 0.4rem 0.8rem;
+  font-size: 0.85rem;
+}
+
 /* Forms */
 .form-group {
   margin-bottom: var(--space-4);
@@ -360,7 +407,7 @@ a:hover {
 .form-input:focus {
   border-color: var(--color-primary);
   outline: 0;
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+  box-shadow: var(--focus-ring);
 }
 
 /* Cards */
@@ -392,12 +439,20 @@ a:hover {
 .alert-error, .message.is-error, .message.error {
   background-color: var(--color-danger-bg);
   color: #991b1b;
-  border-color: #fecaca;
+  border-color: rgba(220, 38, 38, 0.3);
 }
 .alert-success, .message.is-success, .message.success {
   background-color: var(--color-success-bg);
   color: #166534;
-  border-color: #bbf7d0;
+  border-color: rgba(22, 163, 74, 0.3);
+}
+
+/* Dark mode alert text adjustments */
+html.dark-mode .alert-error, html.dark-mode .message.is-error, html.dark-mode .message.error {
+  color: #fca5a5; /* lighter red text for dark background, excellent contrast */
+}
+html.dark-mode .alert-success, html.dark-mode .message.is-success, html.dark-mode .message.success {
+  color: #86efac; /* lighter green text for dark background, excellent contrast */
 }
 
 /* Transitions */

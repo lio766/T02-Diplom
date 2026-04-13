@@ -59,14 +59,19 @@ const messages = {
          close: 'Schließen',
          participantsList: 'Teilnehmer',
          noParticipants: 'Keine Teilnehmer gelistet.',
-         timeRange: 'Zeitraum'
+         timeRange: 'Zeitraum',
+         name: 'Name',
+         description: 'Beschreibung',
+         reapprovalTitle: 'Achtung: Erneute Genehmigung erforderlich',
+         reapprovalText: 'Da dieses Meeting bereits <strong>genehmigt</strong> war, führt die Speicherung dazu, dass der Status wieder auf <strong>"Geplant"</strong> zurückgesetzt wird und das Meeting neu genehmigt werden muss.',
+         reapprovalWarning: 'Sind Sie sicher, dass Sie fortfahren möchten?'
        },
        table: {
          date: 'Datum',
          time: 'Zeit',
          room: 'Raum',
          status: 'Status',
-         title: 'Titel / Teilnehmer',
+         title: 'Titel des Meetings',
          empty: 'Keine Buchungen gefunden.',
          unknownRoom: 'Unbekannt'
        },
@@ -293,7 +298,11 @@ const messages = {
       save: 'Speichern',
       loading: 'Lädt...',
       error: 'Fehler',
-      success: 'Erfolg'
+      success: 'Erfolg',
+      ok: 'OK',
+      saveAndReapprove: 'Trotzdem speichern',
+      deleteConfirmTitle: 'Buchung löschen',
+      deleteConfirmText: 'Bist du sicher, dass du diese Buchung löschen möchtest?'
     },
     wiki: {
       title: 'Wiki & Dokumentation',
@@ -388,7 +397,7 @@ const messages = {
          time: 'Time',
          room: 'Room',
          status: 'Status',
-         title: 'Title / Participants',
+         title: 'Meeting Title',
          empty: 'No bookings found.',
          unknownRoom: 'Unknown'
        },

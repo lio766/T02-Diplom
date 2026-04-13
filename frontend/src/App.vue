@@ -148,8 +148,9 @@ const roleLabel = computed(() => {
     <nav class="navbar">
       <div class="navbar-wrapper">
         <RouterLink to="/" class="navbar-brand">
-          <div class="brand-logo">🏛️</div>
-          <span class="brand-text">{{ $t('nav.brand') }}</span>
+          <img v-if="currentTheme === 'high-contrast'" src="./assets/AgoraSidewaysOrangeNoBg.png" alt="Agora Logo" class="brand-logo-img" />
+          <img v-else-if="currentTheme === 'dark'" src="./assets/AgoraSidewaysWhiteNoBg.png" alt="Agora Logo" class="brand-logo-img" />
+          <img v-else src="./assets/AgoraSidewaysNoBg.png" alt="Agora Logo" class="brand-logo-img" />
         </RouterLink>
         
         <!-- Private Navigation -->
@@ -212,7 +213,7 @@ const roleLabel = computed(() => {
                    </div>
                    <div class="dropdown-divider"></div>
                    <button @click="keycloak.logout" class="dropdown-item text-danger">
-                      <span>🚪</span> {{ $t('nav.logout') }}
+                      <span class="pi pi-sign-in"></span> {{ $t('nav.logout') }}
                    </button>
                 </div>
               </Transition>
@@ -285,17 +286,10 @@ const roleLabel = computed(() => {
   opacity: 0.8;
 }
 
-.brand-logo {
-  width: 36px;
-  height: 36px;
-  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-dark, #1e40af));
-  color: white;
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.25rem;
-  box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.2);
+.brand-logo-img {
+  height: 110px;
+  width: auto;
+  object-fit: contain;
 }
 
 .main-nav {
