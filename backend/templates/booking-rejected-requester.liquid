@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Buchung abgelehnt</title>
+</head>
+<body style="margin:0;padding:24px;background:#fff1f2;font-family:Arial,Helvetica,sans-serif;color:#0f172a;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:700px;margin:0 auto;background:#ffffff;border:1px solid #fecdd3;border-radius:12px;overflow:hidden;">
+        <tr>
+            <td style="padding:20px 24px;background:#7f1d1d;color:#fee2e2;font-size:22px;font-weight:700;">Buchung abgelehnt</td>
+        </tr>
+        <tr>
+            <td style="padding:18px 24px;font-size:14px;line-height:1.6;">
+                Hallo {{ requester_name | default: 'Nutzer' }}, Ihre Raumbuchung wurde leider abgelehnt.
+            </td>
+        </tr>
+        <tr>
+            <td style="padding:0 24px 24px 24px;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border:1px solid #fecdd3;border-radius:10px;">
+                    <tr><td style="padding:10px 14px;border-bottom:1px solid #fecdd3;font-size:12px;color:#9f1239;">Titel</td><td style="padding:10px 14px;border-bottom:1px solid #fecdd3;font-size:14px;">{{ booking_name }}</td></tr>
+                    <tr><td style="padding:10px 14px;border-bottom:1px solid #fecdd3;font-size:12px;color:#9f1239;">Raum</td><td style="padding:10px 14px;border-bottom:1px solid #fecdd3;font-size:14px;">{{ room_name }}</td></tr>
+                    <tr><td style="padding:10px 14px;border-bottom:1px solid #fecdd3;font-size:12px;color:#9f1239;">Datum</td><td style="padding:10px 14px;border-bottom:1px solid #fecdd3;font-size:14px;">{{ date }}</td></tr>
+                    <tr><td style="padding:10px 14px;font-size:12px;color:#9f1239;">Zeit</td><td style="padding:10px 14px;font-size:14px;">{{ start_time }} - {{ end_time }}</td></tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>

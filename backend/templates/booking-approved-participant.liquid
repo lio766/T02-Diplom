@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Meeting bestätigt</title>
+</head>
+<body style="margin:0;padding:24px;background:#eef2ff;font-family:Arial,Helvetica,sans-serif;color:#0f172a;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:720px;margin:0 auto;background:#ffffff;border:1px solid #c7d2fe;border-radius:12px;overflow:hidden;">
+        <tr>
+            <td style="padding:20px 24px;background:#1e1b4b;color:#e0e7ff;font-size:22px;font-weight:700;">Meeting-Zusage</td>
+        </tr>
+        <tr>
+            <td style="padding:18px 24px 10px 24px;font-size:14px;line-height:1.6;">
+                Die Buchung wurde genehmigt. Hier sind die finalen Meeting-Details:
+            </td>
+        </tr>
+        <tr>
+            <td style="padding:0 24px 24px 24px;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border:1px solid #e2e8f0;border-radius:10px;">
+                    <tr><td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;font-size:12px;color:#64748b;">Titel</td><td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;font-size:14px;">{{ booking_name }}</td></tr>
+                    <tr><td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;font-size:12px;color:#64748b;">Raum</td><td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;font-size:14px;">{{ room_name }}</td></tr>
+                    <tr><td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;font-size:12px;color:#64748b;">Datum</td><td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;font-size:14px;">{{ date }}</td></tr>
+                    <tr><td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;font-size:12px;color:#64748b;">Zeit</td><td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;font-size:14px;">{{ start_time }} - {{ end_time }}</td></tr>
+                    <tr><td style="padding:10px 14px;font-size:12px;color:#64748b;">Organisiert von</td><td style="padding:10px 14px;font-size:14px;">{{ requester_name }}</td></tr>
+                </table>
+            </td>
+        </tr>
+        {% if description %}
+        <tr>
+            <td style="padding:0 24px 18px 24px;font-size:14px;line-height:1.6;">
+                <strong>Beschreibung:</strong><br />{{ description }}
+            </td>
+        </tr>
+        {% endif %}
+        {% if participants and participants.size > 0 %}
+        <tr>
+            <td style="padding:0 24px 24px 24px;font-size:14px;line-height:1.6;">
+                <strong>Teilnehmer:</strong>
+                <ul style="margin:6px 0 0 18px;padding:0;">
+                    {% for participant in participants %}
+                    <li style="padding:2px 0;">{{ participant }}</li>
+                    {% endfor %}
+                </ul>
+            </td>
+        </tr>
+        {% endif %}
+    </table>
+</body>
+</html>

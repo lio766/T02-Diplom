@@ -6,6 +6,9 @@ import { sendMail } from './emailService.js'
 
 const app = express()
 const PORT = process.env.PORT || 3000
+const REMINDER_LEAD_MINUTES = Math.max(1, Number(process.env.BOOKING_REMINDER_MINUTES || 30))
+const REMINDER_POLL_MS = Math.max(15000, Number(process.env.BOOKING_REMINDER_POLL_MS || 60000))
+let reminderTimer = null
 
 // Simple CORS for development (Vite runs on 5173)
 app.use((req, res, next) => {
@@ -63,9 +66,25 @@ async function ensureBookingRequesterColumn() {
     }
 }
 
+async function ensureBookingReminderColumn() {
+    const [colRows] = await pool.query(
+        `SELECT COUNT(*) AS cnt
+         FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = ?
+           AND TABLE_NAME = 'Buchungen'
+           AND COLUMN_NAME = 'Reminder_Sent_At'`,
+        [DB_CONFIG.database]
+    )
+
+    if (Number(colRows[0]?.cnt || 0) === 0) {
+        await pool.query('ALTER TABLE Buchungen ADD COLUMN Reminder_Sent_At DATETIME NULL')
+    }
+}
+
 async function initDb() {
     pool = mysql.createPool(DB_CONFIG)
     await ensureBookingRequesterColumn()
+    await ensureBookingReminderColumn()
 }
 
 async function checkDbConnection() {
@@ -201,6 +220,204 @@ function parseParticipantsRaw(raw) {
             }
         })
         .filter((p) => p.id != null)
+}
+
+function formatParticipantsForTemplate(participants) {
+    return (participants || [])
+        .map((p) => {
+            const name = String(p?.name || '').trim()
+            const email = String(p?.email || '').trim()
+            if (name && email) return `${name} (${email})`
+            return name || email
+        })
+        .filter(Boolean)
+}
+
+function uniqueEmails(values) {
+    return Array.from(
+        new Set(
+            (values || [])
+                .map((x) => String(x || '').trim().toLowerCase())
+                .filter(Boolean)
+        )
+    )
+}
+
+async function getBookingMailDataById(bookingId, conn = pool) {
+    const [rows] = await conn.query(
+        `SELECT
+            b.Buchung_Id AS id,
+            b.Raum_Id AS room_id,
+            r.Bezeichnung AS room_name,
+            DATE_FORMAT(b.Startzeit, '%Y-%m-%d') AS date,
+            DATE_FORMAT(b.Startzeit, '%H:%i') AS start_time,
+            DATE_FORMAT(b.Endzeit, '%H:%i') AS end_time,
+            b.Name AS booking_name,
+            b.Beschreibung AS description,
+            b.Status AS status,
+            MAX(req_u.Email) AS requester_email,
+            MAX(TRIM(CONCAT(COALESCE(req_u.Vorname,''), ' ', COALESCE(req_u.Nachname,'')))) AS requester_name,
+            GROUP_CONCAT(DISTINCT CONCAT(
+                u.Benutzer_Id, '::', COALESCE(u.Email,''), '::',
+                TRIM(CONCAT(COALESCE(u.Vorname,''), ' ', COALESCE(u.Nachname,'')))
+            ) SEPARATOR '||') AS participants_raw
+         FROM Buchungen b
+         JOIN Raum r ON r.Raum_Id = b.Raum_Id
+         LEFT JOIN Benutzer req_u ON req_u.Benutzer_Id = b.Benutzer_Id
+         LEFT JOIN Buchung_Benutzer bb ON bb.Buchung_Id = b.Buchung_Id
+         LEFT JOIN Benutzer u ON u.Benutzer_Id = bb.Benutzer_Id
+         WHERE b.Buchung_Id = ?
+         GROUP BY b.Buchung_Id
+         LIMIT 1`,
+        [bookingId]
+    )
+
+    if (!rows.length) return null
+
+    const row = rows[0]
+    const participants = parseParticipantsRaw(row.participants_raw)
+    return {
+        id: Number(row.id),
+        room_id: Number(row.room_id),
+        room_name: String(row.room_name || ''),
+        date: String(row.date || ''),
+        start_time: String(row.start_time || ''),
+        end_time: String(row.end_time || ''),
+        booking_name: String(row.booking_name || ''),
+        description: String(row.description || ''),
+        status: String(row.status || ''),
+        requester_email: String(row.requester_email || '').trim(),
+        requester_name: String(row.requester_name || '').trim(),
+        participants,
+        participant_display: formatParticipantsForTemplate(participants),
+        participant_emails: uniqueEmails(participants.map((p) => p.email)),
+    }
+}
+
+async function sendMailSafe(to, subject, templateName, contextData) {
+    try {
+        await sendMail(to, subject, templateName, contextData)
+        return true
+    } catch (err) {
+        console.error(`Mail send failed (${templateName} -> ${to}):`, err)
+        return false
+    }
+}
+
+async function sendBookingDecisionMailToRequester(mailData, approved) {
+    const requesterEmail = String(mailData?.requester_email || '').trim()
+    if (!requesterEmail) return
+
+    const templateName = approved ? 'booking-approved-requester' : 'booking-rejected-requester'
+    const subject = approved
+        ? `AGORA Buchung genehmigt - ${mailData.booking_name}`
+        : `AGORA Buchung abgelehnt - ${mailData.booking_name}`
+
+    await sendMailSafe(requesterEmail, subject, templateName, {
+        room_name: mailData.room_name,
+        date: mailData.date,
+        start_time: mailData.start_time,
+        end_time: mailData.end_time,
+        booking_name: mailData.booking_name,
+        description: mailData.description,
+        requester_name: mailData.requester_name,
+        participants: mailData.participant_display,
+    })
+}
+
+async function sendBookingApprovedDetailsToParticipants(mailData) {
+    const recipients = uniqueEmails(mailData?.participant_emails || [])
+    if (!recipients.length) return
+
+    for (const email of recipients) {
+        await sendMailSafe(
+            email,
+            `AGORA Meeting-Zusage - ${mailData.booking_name}`,
+            'booking-approved-participant',
+            {
+                room_name: mailData.room_name,
+                date: mailData.date,
+                start_time: mailData.start_time,
+                end_time: mailData.end_time,
+                booking_name: mailData.booking_name,
+                description: mailData.description,
+                requester_name: mailData.requester_name,
+                participants: mailData.participant_display,
+            }
+        )
+    }
+}
+
+async function sendBookingReminderToParticipants(mailData) {
+    const recipients = uniqueEmails(mailData?.participant_emails || [])
+    if (!recipients.length) return
+
+    for (const email of recipients) {
+        await sendMailSafe(
+            email,
+            `AGORA Erinnerung - ${mailData.booking_name} um ${mailData.start_time}`,
+            'booking-reminder',
+            {
+                room_name: mailData.room_name,
+                date: mailData.date,
+                start_time: mailData.start_time,
+                end_time: mailData.end_time,
+                booking_name: mailData.booking_name,
+                description: mailData.description,
+                requester_name: mailData.requester_name,
+                participants: mailData.participant_display,
+                reminder_minutes: REMINDER_LEAD_MINUTES,
+            }
+        )
+    }
+}
+
+async function processUpcomingReminders() {
+    const [rows] = await pool.query(
+        `SELECT Buchung_Id AS id
+         FROM Buchungen
+         WHERE Status = 'Genehmigt'
+           AND Reminder_Sent_At IS NULL
+           AND Startzeit > NOW()
+           AND Startzeit <= DATE_ADD(NOW(), INTERVAL ? MINUTE)
+         ORDER BY Startzeit ASC
+         LIMIT 100`,
+        [REMINDER_LEAD_MINUTES]
+    )
+
+    for (const row of rows) {
+        const bookingId = Number(row.id)
+        if (!Number.isFinite(bookingId)) continue
+
+        try {
+            const mailData = await getBookingMailDataById(bookingId)
+            if (!mailData) continue
+
+            await sendBookingReminderToParticipants(mailData)
+
+            await pool.query(
+                'UPDATE Buchungen SET Reminder_Sent_At = NOW() WHERE Buchung_Id = ? AND Reminder_Sent_At IS NULL',
+                [bookingId]
+            )
+        } catch (err) {
+            console.error(`Reminder handling failed for booking ${bookingId}:`, err)
+        }
+    }
+}
+
+function startReminderScheduler() {
+    if (reminderTimer) clearInterval(reminderTimer)
+
+    // Run once after startup and then in a fixed cadence.
+    processUpcomingReminders().catch((err) => {
+        console.error('Initial reminder processing failed:', err)
+    })
+
+    reminderTimer = setInterval(() => {
+        processUpcomingReminders().catch((err) => {
+            console.error('Reminder processing failed:', err)
+        })
+    }, REMINDER_POLL_MS)
 }
 
 // GET /bookings -> list bookings with room and optional person name
@@ -488,6 +705,8 @@ async function decideApprovalHandler(req, res) {
             return res.status(403).json({ error: 'Keine Berechtigung für diesen Raum' })
         }
 
+        const mailData = await getBookingMailDataById(bookingId, conn)
+
         if (decision === 'approve') {
             const [conflictRows] = await conn.query(
                 `SELECT COUNT(*) AS cnt
@@ -504,13 +723,26 @@ async function decideApprovalHandler(req, res) {
                 return res.status(409).json({ error: 'Zeitfenster wurde bereits durch eine andere Anfrage genehmigt' })
             }
 
-            await conn.query('UPDATE Buchungen SET Status = ? WHERE Buchung_Id = ?', ['Genehmigt', bookingId])
+            await conn.query('UPDATE Buchungen SET Status = ?, Reminder_Sent_At = NULL WHERE Buchung_Id = ?', ['Genehmigt', bookingId])
             await conn.commit()
+
+            if (mailData) {
+                mailData.status = 'Genehmigt'
+                await sendBookingDecisionMailToRequester(mailData, true)
+                await sendBookingApprovedDetailsToParticipants(mailData)
+            }
+
             return res.json({ id: bookingId, status: 'Genehmigt' })
         }
 
         await conn.query('DELETE FROM Buchungen WHERE Buchung_Id = ?', [bookingId])
         await conn.commit()
+
+        if (mailData) {
+            mailData.status = 'Abgelehnt'
+            await sendBookingDecisionMailToRequester(mailData, false)
+        }
+
         return res.json({ id: bookingId, status: 'Abgelehnt' })
     } catch (err) {
         try {
@@ -552,7 +784,7 @@ async function updateBookingHandler(req, res) {
 
         // booking exists?
         const [existsRows] = await pool.query(
-            "SELECT Benutzer_Id, Status, Raum_Id, DATE_FORMAT(Startzeit, '%Y-%m-%d %H:%i:00') AS start_db, DATE_FORMAT(Endzeit, '%Y-%m-%d %H:%i:00') AS end_db FROM Buchungen WHERE Buchung_Id = ? LIMIT 1",
+            "SELECT Benutzer_Id, Status, Raum_Id, Reminder_Sent_At AS reminder_sent_at, DATE_FORMAT(Startzeit, '%Y-%m-%d %H:%i:00') AS start_db, DATE_FORMAT(Endzeit, '%Y-%m-%d %H:%i:00') AS end_db FROM Buchungen WHERE Buchung_Id = ? LIMIT 1",
             [bookingId]
         )
         if (!existsRows.length) return res.status(404).json({ error: 'Buchung nicht gefunden' })
@@ -590,8 +822,17 @@ async function updateBookingHandler(req, res) {
             const nameFinal = String(name || '').trim()
             const beschreibungFinal = String(beschreibung || '').trim() || null
             await conn.query(
-                'UPDATE Buchungen SET Raum_Id = ?, Startzeit = ?, Endzeit = ?, Name = ?, Beschreibung = ?, Status = ? WHERE Buchung_Id = ?',
-                [raumId, startTs, endTs, nameFinal, beschreibungFinal, newStatus, bookingId]
+                'UPDATE Buchungen SET Raum_Id = ?, Startzeit = ?, Endzeit = ?, Name = ?, Beschreibung = ?, Status = ?, Reminder_Sent_At = ? WHERE Buchung_Id = ?',
+                [
+                    raumId,
+                    startTs,
+                    endTs,
+                    nameFinal,
+                    beschreibungFinal,
+                    newStatus,
+                    newStatus === 'Genehmigt' ? existing.reminder_sent_at : null,
+                    bookingId,
+                ]
             )
 
             // participants
@@ -994,6 +1235,7 @@ app.post('/api/bookings', authenticate, async (req, res) => {
 initDb()
     .then(() => checkDbConnection())
     .then(() => {
+        startReminderScheduler()
         app.listen(PORT, () => console.log(`API running on http://localhost:${PORT}`))
     })
     .catch((err) => {
