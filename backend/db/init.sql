@@ -57,7 +57,6 @@ CREATE TABLE IF NOT EXISTS Buchungen (
   Erstellzeit DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   Name VARCHAR(255) NOT NULL,
   Beschreibung TEXT,
-  istGenehmigt TINYINT(1),
   CONSTRAINT fk_buchungen_raum
     FOREIGN KEY (Raum_Id)
     REFERENCES Raum (Raum_Id),

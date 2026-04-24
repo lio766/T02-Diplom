@@ -1,6 +1,3 @@
-Testcase:
-2. genehmiger hinzufügen mit nur Raum B, schauen ob er Raum A Buchungen löschen kann;
-
 Fixes:
-Unnötige Funktionen löschen & zusammenführen; Logo oben links; Wiki implementieren; 
+Unnötige Funktionen löschen & zusammenführen; Wiki implementieren; 
 Unntöige TB Spalten entfernen (isgenehmigt;Kapazität);
